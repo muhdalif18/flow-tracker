@@ -208,7 +208,7 @@ export function Sidebar() {
     <aside className="sidebar">
       {/* Brand */}
       <div className="sb-header">
-        <div className="sb-mark">FT</div>
+        <img src="/myphoto.jpg" className="sb-mark" style={{objectFit:'cover',padding:0}} alt="logo" />
         <div>
           <div className="sb-title">Flow Tracker</div>
           <div className="sb-sub">V2.5.0-STABLE</div>
