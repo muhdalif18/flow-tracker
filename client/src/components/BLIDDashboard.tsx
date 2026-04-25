@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../AppContext';
+import { useAuth } from '../AuthContext';
 import { flowStats, modStats, modStatus, scenarioStatus, scenarioIssueType } from '../utils';
 
 function CheckIcon({ size = 16 }: { size?: number }) {
@@ -45,9 +46,14 @@ function SortIcon() {
 
 export function BLIDDashboard() {
   const { activeFlow } = useApp();
+  const { user, isOwner } = useAuth();
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   if (!activeFlow) return null;
+
+  const ownerName     = activeFlow.created_by_name;
+  const isMyFlow      = isOwner(activeFlow.created_by);
+  const viewingBanner = !isMyFlow && ownerName;
 
   const st  = flowStats(activeFlow);
   const all = activeFlow.modules.flatMap(m => m.scenarios);
@@ -141,6 +147,38 @@ export function BLIDDashboard() {
 
   return (
     <div>
+      {/* Ownership context bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+        padding: '9px 14px', borderRadius: 9,
+        background: viewingBanner ? 'var(--hover)' : 'transparent',
+        border: viewingBanner ? '1px solid var(--line)' : 'none',
+      }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: 6,
+          background: isMyFlow ? 'var(--blue-2)' : 'var(--ink-3)',
+          display: 'grid', placeItems: 'center',
+          color: '#fff', fontWeight: 700, fontSize: 11, flexShrink: 0,
+        }}>
+          {ownerName ? ownerName[0].toUpperCase() : '?'}
+        </div>
+        <div style={{ flex: 1 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+            {isMyFlow ? 'Your BLID Coverage' : `${ownerName}'s BLID Coverage`}
+          </span>
+          {!isMyFlow && (
+            <span style={{
+              marginLeft: 8, fontSize: 11, fontWeight: 600, letterSpacing: '.04em',
+              color: 'var(--ink-3)', textTransform: 'uppercase',
+              padding: '2px 6px', background: 'var(--line)', borderRadius: 4,
+            }}>View only</span>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
+          {activeFlow.name}
+        </span>
+      </div>
+
       {/* KPI row */}
       <div className="kpi-row">
         {kpis.map(k => (
@@ -172,6 +210,7 @@ export function BLIDDashboard() {
             <thead>
               <tr>
                 <th>Module</th>
+                <th>Owner</th>
                 <th>BLIDs</th>
                 <th>Passed</th>
                 <th>Coverage</th>
@@ -187,6 +226,14 @@ export function BLIDDashboard() {
                       <span className="tbl-mod-main">{r.mod.label}: {r.mod.name}</span>
                       <span className="tbl-mod-sub">{r.mod.side} System</span>
                     </div>
+                  </td>
+                  <td>
+                    <span style={{
+                      fontSize: 11.5, fontWeight: 600,
+                      color: r.mod.created_by === user?.userId ? 'var(--blue-2)' : 'var(--ink-3)',
+                    }}>
+                      {r.mod.created_by === user?.userId ? 'You' : (r.mod.created_by_name ?? '—')}
+                    </span>
                   </td>
                   <td><span className="blid-link">{r.blids.join(', ')}</span></td>
                   <td style={{ fontWeight: 600 }}>{r.passed.length}</td>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../AppContext";
+import { useAuth } from "../AuthContext";
 import { flowStats, modStatus } from "../utils";
 
 function NavIcoDash() {
@@ -99,6 +100,7 @@ function NavIcoHelp() {
 
 export function Sidebar() {
   const { state, setActive, setTab, createFlow, deleteFlow } = useApp();
+  const { user, isOwner, logout } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -203,13 +205,15 @@ export function Sidebar() {
                   </div>
                 )}
               </div>
-              <button
-                className="fi-del"
-                onClick={(e) => handleDelete(e, flow.id)}
-                title="Delete flow"
-              >
-                ×
-              </button>
+              {isOwner(flow.created_by) && (
+                <button
+                  className="fi-del"
+                  onClick={(e) => handleDelete(e, flow.id)}
+                  title="Delete flow"
+                >
+                  ×
+                </button>
+              )}
             </div>
           );
         })}
@@ -258,6 +262,30 @@ export function Sidebar() {
 
       {/* Footer nav */}
       <div className="side-foot">
+        <div style={{ padding: '6px 12px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 7, background: 'var(--blue-2)',
+            display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 700, fontSize: 12, flexShrink: 0,
+          }}>
+            {user?.username[0].toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user?.username}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>Signed in</div>
+          </div>
+          <button
+            onClick={logout}
+            title="Sign out"
+            style={{
+              background: 'none', border: '1px solid var(--line)', borderRadius: 5,
+              color: 'var(--ink-3)', cursor: 'pointer', fontSize: 11, padding: '3px 7px',
+            }}
+          >
+            Out
+          </button>
+        </div>
         <nav className="nav" style={{ padding: 0 }}>
           <div className="nav-item">
             <NavIcoDoc />

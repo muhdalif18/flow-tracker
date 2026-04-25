@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../AppContext';
+import { useAuth } from '../AuthContext';
 import { modStatus, modStats, isGated, STATUS_META, today, scenarioStatus, scenarioIssueType } from '../utils';
 import type { Flow, Module, Scenario, TestStep } from '../types';
 
@@ -48,7 +49,7 @@ function AddScenarioModal({ moduleId, onClose }: { moduleId: string; onClose: ()
 }
 
 // ── Step Card ─────────────────────────────────────────────────────────────────
-function StepCard({ step, stepNo }: { step: TestStep; stepNo: number }) {
+function StepCard({ step, stepNo, canEdit }: { step: TestStep; stepNo: number; canEdit: boolean }) {
   const { updateStep, deleteStep, uploadImage } = useApp();
   const [uploading, setUploading] = useState(false);
   const upd = (data: Partial<TestStep>) => updateStep(step.id, data);
@@ -78,56 +79,68 @@ function StepCard({ step, stepNo }: { step: TestStep; stepNo: number }) {
           className="step-desc-inp"
           defaultValue={step.description}
           placeholder="Step description…"
-          onBlur={e => { if (e.target.value.trim() !== step.description) upd({ description: e.target.value.trim() }); }}
+          readOnly={!canEdit}
+          onBlur={canEdit ? (e => { if (e.target.value.trim() !== step.description) upd({ description: e.target.value.trim() }); }) : undefined}
         />
-        <button className="btn-xs btn-danger" onClick={() => { if (confirm('Delete step?')) deleteStep(step.id); }}>×</button>
+        {canEdit && (
+          <button className="btn-xs btn-danger" onClick={() => { if (confirm('Delete step?')) deleteStep(step.id); }}>×</button>
+        )}
       </div>
 
       <div className="step-body">
         <div className="ep-field" style={{ marginBottom: 10 }}>
           <label>Expected result</label>
-          <textarea rows={2} defaultValue={step.expected} placeholder="What should happen?" onBlur={e => upd({ expected: e.target.value })} />
+          <textarea rows={2} defaultValue={step.expected} placeholder="What should happen?" readOnly={!canEdit} onBlur={canEdit ? (e => upd({ expected: e.target.value })) : undefined} />
         </div>
 
-        <div className="ep-controls">
-          <div className="ep-ctrl">
-            <div className="ep-label">Status</div>
-            <div className="ep-btn-row">
-              <button className={`ep-st-btn ${step.status === 'pass'     ? 'ep-pass' : ''}`} onClick={() => mark('pass')}>✓ Pass</button>
-              <button className={`ep-st-btn ${step.status === 'fail'     ? 'ep-fail' : ''}`} onClick={() => mark('fail')}>✗ Fail</button>
-              <button className={`ep-st-btn ${step.status === 'untested' ? 'ep-nt'   : ''}`} onClick={() => mark('untested')}>— Reset</button>
-            </div>
-          </div>
-          {step.status === 'fail' && (
+        {canEdit ? (
+          <div className="ep-controls">
             <div className="ep-ctrl">
-              <div className="ep-label">Issue type</div>
+              <div className="ep-label">Status</div>
               <div className="ep-btn-row">
-                <button className={`ep-issue-btn ep-blocker ${step.issue_type === 'blocker' ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'blocker' ? null : 'blocker' })}>🔒 Blocker</button>
-                <button className={`ep-issue-btn ep-major   ${step.issue_type === 'major'   ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'major'   ? null : 'major'   })}>⚠ Major</button>
-                <button className={`ep-issue-btn ep-minor   ${step.issue_type === 'minor'   ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'minor'   ? null : 'minor'   })}>● Minor</button>
+                <button className={`ep-st-btn ${step.status === 'pass'     ? 'ep-pass' : ''}`} onClick={() => mark('pass')}>✓ Pass</button>
+                <button className={`ep-st-btn ${step.status === 'fail'     ? 'ep-fail' : ''}`} onClick={() => mark('fail')}>✗ Fail</button>
+                <button className={`ep-st-btn ${step.status === 'untested' ? 'ep-nt'   : ''}`} onClick={() => mark('untested')}>— Reset</button>
               </div>
             </div>
-          )}
-        </div>
+            {step.status === 'fail' && (
+              <div className="ep-ctrl">
+                <div className="ep-label">Issue type</div>
+                <div className="ep-btn-row">
+                  <button className={`ep-issue-btn ep-blocker ${step.issue_type === 'blocker' ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'blocker' ? null : 'blocker' })}>🔒 Blocker</button>
+                  <button className={`ep-issue-btn ep-major   ${step.issue_type === 'major'   ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'major'   ? null : 'major'   })}>⚠ Major</button>
+                  <button className={`ep-issue-btn ep-minor   ${step.issue_type === 'minor'   ? 'on' : ''}`} onClick={() => upd({ issue_type: step.issue_type === 'minor'   ? null : 'minor'   })}>● Minor</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="ep-ctrl">
+            <div className="ep-label">Status</div>
+            <span className={`sst-pill ${step.status === 'pass' ? 'sst-pill-pass' : step.status === 'fail' ? 'sst-pill-fail' : 'sst-pill-nt'}`}>
+              {step.status === 'pass' ? '✓ PASS' : step.status === 'fail' ? '✗ FAIL' : '— N/T'}
+            </span>
+          </div>
+        )}
 
         {step.status !== 'untested' && (
           <>
             <div className="ep-fields" style={{ marginTop: 10 }}>
               <div className="ep-field">
                 <label>Date tested</label>
-                <input type="text" defaultValue={step.date_tested} placeholder={today()} onBlur={e => upd({ date_tested: e.target.value })} />
+                <input type="text" defaultValue={step.date_tested} placeholder={today()} readOnly={!canEdit} onBlur={canEdit ? (e => upd({ date_tested: e.target.value })) : undefined} />
               </div>
               <div className="ep-field">
                 <label>ADO Ticket</label>
-                <input type="text" defaultValue={step.ado_ticket} placeholder="#1234 or URL" onBlur={e => upd({ ado_ticket: e.target.value })} />
+                <input type="text" defaultValue={step.ado_ticket} placeholder="#1234 or URL" readOnly={!canEdit} onBlur={canEdit ? (e => upd({ ado_ticket: e.target.value })) : undefined} />
               </div>
               <div className="ep-field ep-wide">
                 <label>Evidence URL</label>
-                <input type="url" defaultValue={step.evidence_url} placeholder="https://sharepoint… or video link" onBlur={e => upd({ evidence_url: e.target.value })} />
+                <input type="url" defaultValue={step.evidence_url} placeholder="https://sharepoint… or video link" readOnly={!canEdit} onBlur={canEdit ? (e => upd({ evidence_url: e.target.value })) : undefined} />
               </div>
               <div className="ep-field">
                 <label>Screenshot {uploading && <span className="uploading">Uploading…</span>}</label>
-                <input type="file" accept="image/*" onChange={handleImg} />
+                {canEdit && <input type="file" accept="image/*" onChange={handleImg} />}
                 {step.evidence_image && (
                   <img src={step.evidence_image} alt="evidence" className="ev-thumb" onClick={() => window.open(step.evidence_image!)} />
                 )}
@@ -135,7 +148,7 @@ function StepCard({ step, stepNo }: { step: TestStep; stepNo: number }) {
             </div>
             <div className="ep-field ep-full" style={{ marginTop: 8 }}>
               <label>Remarks</label>
-              <textarea rows={2} defaultValue={step.remarks} placeholder="Actual result, observations…" onBlur={e => upd({ remarks: e.target.value })} />
+              <textarea rows={2} defaultValue={step.remarks} placeholder="Actual result, observations…" readOnly={!canEdit} onBlur={canEdit ? (e => upd({ remarks: e.target.value })) : undefined} />
             </div>
             {(step.ado_ticket || step.evidence_url) && (
               <div className="ep-footer" style={{ marginTop: 8 }}>
@@ -154,7 +167,7 @@ function StepCard({ step, stepNo }: { step: TestStep; stepNo: number }) {
 }
 
 // ── Expand Panel (step list) ──────────────────────────────────────────────────
-function ExpandPanel({ sc }: { sc: Scenario }) {
+function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   const { addStep, deleteScenario } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [stepDesc, setStepDesc] = useState('');
@@ -171,13 +184,15 @@ function ExpandPanel({ sc }: { sc: Scenario }) {
     <div className="expand-panel">
       {sc.steps.length === 0 && !showAdd && (
         <div className="sc-empty">
-          No steps yet — <button className="link-btn" onClick={() => setShowAdd(true)}>add first step</button>
+          {canEdit
+            ? <>No steps yet — <button className="link-btn" onClick={() => setShowAdd(true)}>add first step</button></>
+            : 'No steps yet.'}
         </div>
       )}
 
-      {sc.steps.map((step, i) => <StepCard key={step.id} step={step} stepNo={i + 1} />)}
+      {sc.steps.map((step, i) => <StepCard key={step.id} step={step} stepNo={i + 1} canEdit={canEdit} />)}
 
-      {showAdd ? (
+      {canEdit && (showAdd ? (
         <form className="add-step-form" onSubmit={handleAddStep}>
           <input
             autoFocus value={stepDesc} onChange={e => setStepDesc(e.target.value)}
@@ -196,19 +211,21 @@ function ExpandPanel({ sc }: { sc: Scenario }) {
         sc.steps.length > 0 && (
           <button className="btn-xs" style={{ marginTop: 8 }} onClick={() => setShowAdd(true)}>+ Add Step</button>
         )
-      )}
+      ))}
 
-      <div className="ep-footer" style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-        <button className="btn-del-sc" onClick={() => { if (confirm('Delete scenario and all its steps?')) deleteScenario(sc.id); }}>
-          Delete Scenario
-        </button>
-      </div>
+      {canEdit && (
+        <div className="ep-footer" style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+          <button className="btn-del-sc" onClick={() => { if (confirm('Delete scenario and all its steps?')) deleteScenario(sc.id); }}>
+            Delete Scenario
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Scenario Row ──────────────────────────────────────────────────────────────
-function ScenarioRow({ sc }: { sc: Scenario }) {
+function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   const { state, toggleExpand } = useApp();
   const isExp = state.expanded.has(sc.id);
 
@@ -279,7 +296,7 @@ function ScenarioRow({ sc }: { sc: Scenario }) {
 
       {isExp && (
         <tr className="exp-row">
-          <td colSpan={5}><ExpandPanel sc={sc} /></td>
+          <td colSpan={5}><ExpandPanel sc={sc} canEdit={canEdit} /></td>
         </tr>
       )}
     </>
@@ -289,9 +306,11 @@ function ScenarioRow({ sc }: { sc: Scenario }) {
 // ── Module Card ───────────────────────────────────────────────────────────────
 function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
   const { deleteModule, moveModule } = useApp();
+  const { isOwner } = useAuth();
   const [showAdd,   setShowAdd]   = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  const canEdit = isOwner(flow.created_by);
   const st    = modStatus(mod);
   const sm    = STATUS_META[st];
   const ms    = modStats(mod);
@@ -369,17 +388,19 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
           {/* Status badge */}
           <span className={`st-badge ${sm.cls}`}>{sm.label}</span>
 
-          {/* Action buttons */}
-          <button className="sc-add-btn" onClick={() => setShowAdd(true)}>
-            <IcoPlus />Scenario
-          </button>
-          <button className="mod-ico-btn" onClick={() => moveModule(flow.id, mod.id, -1)} title="Move up"><IcoUp /></button>
-          <button className="mod-ico-btn" onClick={() => moveModule(flow.id, mod.id,  1)} title="Move down"><IcoDown /></button>
-          <button
-            className="mod-ico-btn ico-danger"
-            title="Delete module"
-            onClick={() => { if (confirm('Delete module and all its scenarios?')) deleteModule(mod.id); }}
-          ><IcoTrash /></button>
+          {/* Action buttons — owner only */}
+          {canEdit && <>
+            <button className="sc-add-btn" onClick={() => setShowAdd(true)}>
+              <IcoPlus />Scenario
+            </button>
+            <button className="mod-ico-btn" onClick={() => moveModule(flow.id, mod.id, -1)} title="Move up"><IcoUp /></button>
+            <button className="mod-ico-btn" onClick={() => moveModule(flow.id, mod.id,  1)} title="Move down"><IcoDown /></button>
+            <button
+              className="mod-ico-btn ico-danger"
+              title="Delete module"
+              onClick={() => { if (confirm('Delete module and all its scenarios?')) deleteModule(mod.id); }}
+            ><IcoTrash /></button>
+          </>}
         </div>
       </div>
 
@@ -396,10 +417,14 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
         <div className="mod-empty">
           <div className="mod-empty-ico"><IcoDoc /></div>
           <div className="mod-empty-title">No scenarios yet</div>
-          <div className="mod-empty-sub">Add scenarios from the URS document to begin tracking this module.</div>
-          <button className="sc-add-btn" style={{ margin: '0 auto', display: 'inline-flex' }} onClick={() => setShowAdd(true)}>
-            <IcoPlus />Add first scenario
-          </button>
+          <div className="mod-empty-sub">
+            {canEdit ? 'Add scenarios from the URS document to begin tracking this module.' : 'No scenarios have been added to this module yet.'}
+          </div>
+          {canEdit && (
+            <button className="sc-add-btn" style={{ margin: '0 auto', display: 'inline-flex' }} onClick={() => setShowAdd(true)}>
+              <IcoPlus />Add first scenario
+            </button>
+          )}
         </div>
       ) : (
         <table className="sc-table">
@@ -413,7 +438,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
             </tr>
           </thead>
           <tbody>
-            {mod.scenarios.map(sc => <ScenarioRow key={sc.id} sc={sc} />)}
+            {mod.scenarios.map(sc => <ScenarioRow key={sc.id} sc={sc} canEdit={canEdit} />)}
           </tbody>
         </table>
       )}

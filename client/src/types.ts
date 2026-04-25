@@ -30,6 +30,8 @@ export interface Module {
   side: 'eDS' | 'HITS';
   note: string;
   order_idx: number;
+  created_by: string | null;
+  created_by_name: string | null;
   scenarios: Scenario[];
 }
 
@@ -39,6 +41,8 @@ export interface Flow {
   description: string;
   created_at: string;
   order_idx: number;
+  created_by: string | null;
+  created_by_name: string | null;
   modules: Module[];
 }
 

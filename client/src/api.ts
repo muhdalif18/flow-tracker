@@ -1,16 +1,53 @@
 import type { Flow, Scenario, TestStep } from './types';
 
 const BASE = '/api';
-const json = (r: Response) => { if (!r.ok) throw new Error(`API ${r.status}`); return r.json(); };
-const post = (url: string, body: object) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json);
-const put  = (url: string, body: object) => fetch(url, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json);
-const del  = (url: string) => fetch(url, { method: 'DELETE' }).then(json);
+
+function authHeader(): Record<string, string> {
+  const token = localStorage.getItem('ft_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function json(r: Response) {
+  if (r.status === 401) {
+    localStorage.removeItem('ft_token');
+    localStorage.removeItem('ft_userId');
+    localStorage.removeItem('ft_username');
+    window.location.reload();
+  }
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
+const post = (url: string, body: object) =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify(body),
+  }).then(json);
+
+const put = (url: string, body: object) =>
+  fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify(body),
+  }).then(json);
+
+const del = (url: string) =>
+  fetch(url, { method: 'DELETE', headers: authHeader() }).then(json);
 
 export const api = {
+  // Auth
+  login: (username: string, password: string): Promise<{ token: string; userId: string; username: string }> =>
+    post(`${BASE}/auth/login`, { username, password }),
+  register: (username: string, password: string): Promise<{ token: string; userId: string; username: string }> =>
+    post(`${BASE}/auth/register`, { username, password }),
+
   // Flows
-  getFlows:   (): Promise<Flow[]>  => fetch(`${BASE}/flows`).then(json),
-  createFlow: (name: string, description: string): Promise<Flow> => post(`${BASE}/flows`, { name, description }),
-  deleteFlow: (id: string)  => del(`${BASE}/flows/${id}`),
+  getFlows:   (): Promise<Flow[]>  =>
+    fetch(`${BASE}/flows`, { headers: authHeader() }).then(json),
+  createFlow: (name: string, description: string): Promise<Flow> =>
+    post(`${BASE}/flows`, { name, description }),
+  deleteFlow: (id: string) => del(`${BASE}/flows/${id}`),
 
   // Modules
   addModule: (flowId: string, data: { label: string; name: string; side: string; note: string }) =>
@@ -23,7 +60,8 @@ export const api = {
   // Scenarios
   addScenario: (moduleId: string, data: { blid: string; description: string }) =>
     post(`${BASE}/modules/${moduleId}/scenarios`, data),
-  updateScenario: (id: string, data: Partial<Scenario>) => put(`${BASE}/scenarios/${id}`, data),
+  updateScenario: (id: string, data: Partial<Scenario>) =>
+    put(`${BASE}/scenarios/${id}`, data),
   deleteScenario: (id: string) => del(`${BASE}/scenarios/${id}`),
 
   // Steps
@@ -36,7 +74,7 @@ export const api = {
   uploadImage: async (file: File): Promise<{ url: string }> => {
     const fd = new FormData();
     fd.append('image', file);
-    const r = await fetch(`${BASE}/upload`, { method: 'POST', body: fd });
+    const r = await fetch(`${BASE}/upload`, { method: 'POST', headers: authHeader(), body: fd });
     return json(r);
   },
 };
