@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { v2 as cloudinary } from 'cloudinary';
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 import { signToken, requireAuth } from './auth';
 import type { AuthRequest } from './auth';
@@ -17,17 +18,26 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ── Static uploads ────────────────────────────────────────────────────────
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-app.use('/uploads', express.static(UPLOADS_DIR));
+// ── Cloudinary (production) / local disk (dev) ────────────────────────────
+const USE_CLOUDINARY = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
 
-// ── Multer ────────────────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: UPLOADS_DIR,
-  filename: (_req, file, cb) => cb(null, `${uuidv4()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`),
-});
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+if (USE_CLOUDINARY) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
+
+// ── Static uploads (local dev only) ──────────────────────────────────────
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../../uploads');
+if (!USE_CLOUDINARY) {
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  app.use('/uploads', express.static(UPLOADS_DIR));
+}
+
+// ── Multer (memory storage so we can stream to Cloudinary) ────────────────
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── Database ──────────────────────────────────────────────────────────────
 const DB_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../data');
@@ -387,9 +397,27 @@ app.put('/api/flows/:flowId/modules/reorder', (req: AuthRequest, res) => {
 });
 
 // ── Image upload ──────────────────────────────────────────────────────────
-app.post('/api/upload', upload.single('image'), (req, res) => {
+app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({ url: `/uploads/${req.file.filename}` });
+
+  if (USE_CLOUDINARY) {
+    try {
+      const result = await new Promise<any>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: 'flow-tracker', resource_type: 'image' },
+          (err, result) => err ? reject(err) : resolve(result)
+        );
+        stream.end(req.file!.buffer);
+      });
+      res.json({ url: result.secure_url });
+    } catch (err) {
+      res.status(500).json({ error: 'Cloudinary upload failed' });
+    }
+  } else {
+    const filename = `${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, filename), req.file.buffer);
+    res.json({ url: `/uploads/${filename}` });
+  }
 });
 
 // ── Serve React app in production ─────────────────────────────────────────
