@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Database
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Build output
+dist/
+client/dist/
+server/dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
