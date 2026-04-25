@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useApp } from "../AppContext";
 import { useAuth } from "../AuthContext";
 import { flowStats, modStatus } from "../utils";
@@ -46,13 +46,28 @@ function getDotColor(flow: Flow) {
 }
 
 function FlowItem({ flow, indent = false }: { flow: Flow; indent?: boolean }) {
-  const { state, setActive, deleteFlow } = useApp();
+  const { state, setActive, updateFlow, deleteFlow } = useApp();
   const { isOwner } = useAuth();
   const { confirm, modal } = useConfirm();
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState('');
   const st = flowStats(flow);
   const dot = getDotColor(flow);
   const pct = st.total > 0 ? Math.round((st.pass / st.total) * 100) : 0;
   const isActive = flow.id === state.activeFlowId;
+  const owner = isOwner(flow.created_by);
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameVal(flow.name);
+    setRenaming(true);
+  };
+
+  const commitRename = async () => {
+    const v = renameVal.trim();
+    if (v && v !== flow.name) await updateFlow(flow.id, { name: v });
+    setRenaming(false);
+  };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -65,19 +80,34 @@ function FlowItem({ flow, indent = false }: { flow: Flow; indent?: boolean }) {
       {modal}
       <div
         className={`flow-item ${isActive ? "active" : ""} ${indent ? "flow-item--child" : ""}`}
-        onClick={() => setActive(flow.id)}
+        onClick={() => !renaming && setActive(flow.id)}
       >
         <div className="fi-dot" style={{ background: dot }} />
         <div className="fi-info">
-          <div className="fi-name">{flow.name}</div>
+          {renaming ? (
+            <input
+              autoFocus
+              className="fi-rename-input"
+              value={renameVal}
+              onChange={e => setRenameVal(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <div className="fi-name">{flow.name}</div>
+          )}
           {st.total > 0 && (
             <div className="fi-progress">
               <div className="fi-progress-fill" style={{ width: `${pct}%`, background: dot }} />
             </div>
           )}
         </div>
-        {isOwner(flow.created_by) && (
-          <button className="fi-del" onClick={handleDelete} title="Delete flow">×</button>
+        {owner && !renaming && (
+          <div className="fi-actions">
+            <button className="fi-action-btn" onClick={startRename} title="Rename flow">✎</button>
+            <button className="fi-del" onClick={handleDelete} title="Delete flow">×</button>
+          </div>
         )}
       </div>
     </>
@@ -86,12 +116,28 @@ function FlowItem({ flow, indent = false }: { flow: Flow; indent?: boolean }) {
 
 function GroupSection({ name, flows }: { name: string; flows: Flow[] }) {
   const [collapsed, setCollapsed] = useState(false);
-  const { state } = useApp();
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState('');
+  const { state, updateFlow } = useApp();
+  const { isOwner } = useAuth();
   const hasActive = flows.some(f => f.id === state.activeFlowId);
+  const canRename = flows.some(f => isOwner(f.created_by));
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameVal(name);
+    setRenaming(true);
+  };
+
+  const commitRename = async () => {
+    const v = renameVal.trim();
+    if (v && v !== name) await Promise.all(flows.map(f => updateFlow(f.id, { group_name: v })));
+    setRenaming(false);
+  };
 
   return (
     <div className={`flow-group ${hasActive ? "flow-group--active" : ""}`}>
-      <div className="flow-group-header" onClick={() => setCollapsed(c => !c)}>
+      <div className="flow-group-header" onClick={() => !renaming && setCollapsed(c => !c)}>
         <svg
           className="flow-group-chevron"
           style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
@@ -99,8 +145,23 @@ function GroupSection({ name, flows }: { name: string; flows: Flow[] }) {
         >
           <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span className="flow-group-name">{name}</span>
-        <span className="flow-group-count">{flows.length}</span>
+        {renaming ? (
+          <input
+            autoFocus
+            className="fi-rename-input fg-rename-input"
+            value={renameVal}
+            onChange={e => setRenameVal(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(false); }}
+            onClick={e => e.stopPropagation()}
+          />
+        ) : (
+          <span className="flow-group-name">{name}</span>
+        )}
+        {!renaming && <span className="flow-group-count">{flows.length}</span>}
+        {canRename && !renaming && (
+          <button className="fi-action-btn fg-rename-btn" onClick={startRename} title="Rename group">✎</button>
+        )}
       </div>
       {!collapsed && (
         <div className="flow-group-body">

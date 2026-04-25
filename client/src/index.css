@@ -251,14 +251,33 @@ html, body, #root {
 .fi-progress { height: 2px; background: rgba(255,255,255,.08); border-radius: 99px; margin-top: 4px; overflow: hidden; }
 .fi-progress-fill { height: 100%; border-radius: 99px; transition: width .4s var(--ease); }
 
+.fi-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity var(--t); }
+.flow-item:hover .fi-actions { opacity: 1; }
+
+.fi-action-btn {
+  background: none; border: none; color: var(--sidebar-muted);
+  cursor: pointer; padding: 2px 5px; border-radius: 4px;
+  font-size: 13px; line-height: 1; flex-shrink: 0; transition: all var(--t);
+}
+.fi-action-btn:hover { background: rgba(255,255,255,.1); color: var(--sidebar-ink); }
+
 .fi-del {
   background: none; border: none; color: var(--sidebar-muted);
   cursor: pointer; padding: 2px 5px; border-radius: 4px;
-  font-size: 15px; line-height: 1; flex-shrink: 0;
-  transition: all var(--t); opacity: 0;
+  font-size: 15px; line-height: 1; flex-shrink: 0; transition: all var(--t);
 }
-.flow-item:hover .fi-del { opacity: 1; }
 .fi-del:hover { background: rgba(220,38,38,.25); color: #fca5a5; }
+
+.fi-rename-input {
+  width: 100%; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 4px; color: var(--sidebar-ink); font-size: 12px; font-weight: 500;
+  padding: 1px 5px; outline: none; font-family: var(--sans); text-transform: uppercase;
+}
+.fi-rename-input:focus { border-color: rgba(99,179,237,.6); background: rgba(255,255,255,.15); }
+
+.fg-rename-input { flex: 1; }
+.fg-rename-btn { opacity: 0; transition: opacity var(--t); }
+.flow-group-header:hover .fg-rename-btn { opacity: 1; }
 
 .sb-empty { font-size: 11px; color: var(--sidebar-muted); text-align: center; padding: 16px 8px; line-height: 1.5; }
 

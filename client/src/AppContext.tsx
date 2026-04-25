@@ -49,6 +49,7 @@ interface AppContextValue {
   setTab: (tab: ActiveTab) => void;
   toggleExpand: (id: string) => void;
   createFlow: (name: string, desc: string, group?: string) => Promise<void>;
+  updateFlow: (id: string, data: { name?: string; group_name?: string }) => Promise<void>;
   deleteFlow: (id: string) => Promise<void>;
   addModule: (flowId: string, data: { label: string; name: string; side: string; note: string; parallel_group?: string }) => Promise<void>;
   deleteModule: (id: string) => Promise<void>;
@@ -84,6 +85,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await loadFlows(flow.id);
   }, [loadFlows]);
 
+  const updateFlow = useCallback(async (id: string, data: { name?: string; group_name?: string }) => {
+    await api.updateFlow(id, data);
+    await loadFlows(state.activeFlowId);
+  }, [loadFlows, state.activeFlowId]);
+
   const deleteFlow = useCallback(async (id: string) => {
     await api.deleteFlow(id);
     const flows = await api.getFlows();
@@ -110,7 +116,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActive: id  => dispatch({ type: 'SET_ACTIVE', id }),
       setTab:    tab => dispatch({ type: 'SET_TAB',    tab }),
       toggleExpand: id => dispatch({ type: 'TOGGLE_EXPAND', id }),
-      createFlow, deleteFlow, addModule, deleteModule, moveModule,
+      createFlow, updateFlow, deleteFlow, addModule, deleteModule, moveModule,
       addScenario, updateScenario, deleteScenario,
       addStep, updateStep, deleteStep, uploadImage,
     }}>

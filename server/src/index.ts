@@ -294,6 +294,23 @@ app.post('/api/flows', async (req: AuthRequest, res) => {
   res.json(flows.find(f => f.id === id));
 });
 
+app.put('/api/flows/:id', async (req: AuthRequest, res) => {
+  const { rows } = await pool.query('SELECT created_by FROM flows WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Not found' });
+  if (!canEdit(rows[0].created_by, req.user!.userId))
+    return res.status(403).json({ error: 'You can only edit your own flows' });
+  const body = req.body as { name?: string; group_name?: string };
+  if (body.name !== undefined && !body.name.trim()) return res.status(400).json({ error: 'name cannot be empty' });
+  const sets: string[] = [];
+  const vals: (string | null)[] = [];
+  if (body.name !== undefined) { sets.push(`name = $${vals.length + 1}`); vals.push(body.name.trim()); }
+  if ('group_name' in body) { sets.push(`group_name = $${vals.length + 1}`); vals.push(body.group_name?.trim() || null); }
+  if (!sets.length) return res.status(400).json({ error: 'nothing to update' });
+  vals.push(req.params.id);
+  await pool.query(`UPDATE flows SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+  res.json({ ok: true });
+});
+
 app.delete('/api/flows/:id', async (req: AuthRequest, res) => {
   const { rows } = await pool.query('SELECT created_by FROM flows WHERE id = $1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found' });

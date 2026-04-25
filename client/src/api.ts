@@ -47,6 +47,7 @@ export const api = {
     fetch(`${BASE}/flows`, { headers: authHeader() }).then(json),
   createFlow: (name: string, description: string, group_name = ''): Promise<Flow> =>
     post(`${BASE}/flows`, { name, description, group_name }),
+  updateFlow: (id: string, data: { name?: string; group_name?: string }) => put(`${BASE}/flows/${id}`, data),
   deleteFlow: (id: string) => del(`${BASE}/flows/${id}`),
 
   // Modules
