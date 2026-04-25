@@ -178,29 +178,26 @@ export function Sidebar() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [group, setGroup] = useState("");
+  const [groupMode, setGroupMode] = useState<"PINDAAN" | "BANTAHAN" | "others">("PINDAAN");
+  const [customGroup, setCustomGroup] = useState("");
 
-  // Collect existing group names for autocomplete
-  const existingGroups = Array.from(
-    new Set(state.flows.map(f => f.group_name).filter(Boolean))
-  );
-
-  // Split flows into ungrouped and grouped
-  const ungrouped = state.flows.filter(f => !f.group_name);
   const grouped = new Map<string, Flow[]>();
   for (const f of state.flows) {
-    if (!f.group_name) continue;
-    if (!grouped.has(f.group_name)) grouped.set(f.group_name, []);
-    grouped.get(f.group_name)!.push(f);
+    const key = f.group_name ?? "(Ungrouped)";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(f);
   }
+
+  const resolvedGroup = groupMode === "others" ? customGroup.trim() : groupMode;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    await createFlow(name.trim(), desc.trim(), group.trim());
+    if (!name.trim() || !resolvedGroup) return;
+    await createFlow(name.trim(), desc.trim(), resolvedGroup);
     setName("");
     setDesc("");
-    setGroup("");
+    setGroupMode("PINDAAN");
+    setCustomGroup("");
     setShowForm(false);
   };
 
@@ -237,10 +234,6 @@ export function Sidebar() {
           <div className="sb-empty">No flows yet.<br />Create one below.</div>
         )}
 
-        {/* Ungrouped flows */}
-        {ungrouped.map(f => <FlowItem key={f.id} flow={f} />)}
-
-        {/* Grouped flows */}
         {Array.from(grouped.entries()).map(([groupName, flows]) => (
           <GroupSection key={groupName} name={groupName} flows={flows} />
         ))}
@@ -263,18 +256,28 @@ export function Sidebar() {
             placeholder="Description (optional)"
             className="sb-input"
           />
-          <input
-            list="group-list"
-            value={group}
-            onChange={e => setGroup(e.target.value)}
-            placeholder="Group (optional)"
+          <select
+            value={groupMode}
+            onChange={e => setGroupMode(e.target.value as "PINDAAN" | "BANTAHAN" | "others")}
             className="sb-input"
-          />
-          <datalist id="group-list">
-            {existingGroups.map(g => <option key={g} value={g} />)}
-          </datalist>
+            required
+          >
+            <option value="PINDAAN">PINDAAN</option>
+            <option value="BANTAHAN">BANTAHAN</option>
+            <option value="others">Others…</option>
+          </select>
+          {groupMode === "others" && (
+            <input
+              autoFocus
+              value={customGroup}
+              onChange={e => setCustomGroup(e.target.value)}
+              placeholder="Group name *"
+              required
+              className="sb-input"
+            />
+          )}
           <div className="sb-form-btns">
-            <button type="button" className="sb-cancel" onClick={() => { setShowForm(false); setName(""); setDesc(""); setGroup(""); }}>
+            <button type="button" className="sb-cancel" onClick={() => { setShowForm(false); setName(""); setDesc(""); setGroupMode("PINDAAN"); setCustomGroup(""); }}>
               Cancel
             </button>
             <button type="submit" className="sb-create">Create</button>
