@@ -66,9 +66,14 @@ function StepCard({ step, stepNo, canEdit }: { step: TestStep; stepNo: number; c
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { alert('Max 10MB'); return; }
     setUploading(true);
-    const url = await uploadImage(file);
-    await upd({ evidence_image: url });
-    setUploading(false);
+    try {
+      const url = await uploadImage(file);
+      await upd({ evidence_image: url });
+    } catch {
+      alert('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (

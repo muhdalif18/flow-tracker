@@ -463,7 +463,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
         ContentType: req.file.mimetype,
       }));
       res.json({ url: `${R2_PUBLIC_URL}/${key}` });
-    } catch {
+    } catch (err) {
+      console.error('R2 upload error:', err);
       res.status(500).json({ error: 'R2 upload failed' });
     }
   } else {
