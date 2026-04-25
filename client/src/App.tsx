@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { FlowDiagram } from "./components/FlowDiagram";
 import { ScenariosView } from "./components/ScenariosView";
 import { BLIDDashboard } from "./components/BLIDDashboard";
+import { exportReport, exportExcel } from "./exportReport";
 
 const QUICK = [
   { l: "M7",  n: "Rayuan Lanjutan Masa Bayaran",  s: "eDS"  },
@@ -67,19 +68,25 @@ function IconSprite() {
 }
 
 function AddModuleModal({ flowId, onClose }: { flowId: string; onClose: () => void }) {
-  const { addModule } = useApp();
-  const [label, setLabel] = useState("");
-  const [name,  setName]  = useState("");
-  const [side,  setSide]  = useState<"eDS" | "HITS">("eDS");
-  const [note,  setNote]  = useState("");
-  const [saving, setSaving] = useState(false);
+  const { addModule, state } = useApp();
+  const [label,    setLabel]    = useState("");
+  const [name,     setName]     = useState("");
+  const [side,     setSide]     = useState<"eDS" | "HITS">("eDS");
+  const [note,     setNote]     = useState("");
+  const [parGroup, setParGroup] = useState("");
+  const [saving,   setSaving]   = useState(false);
+
+  const activeFlow = state.flows.find(f => f.id === flowId);
+  const existingGroups = Array.from(
+    new Set((activeFlow?.modules ?? []).map(m => m.parallel_group).filter(Boolean) as string[])
+  );
 
   const fill = (l: string, n: string, s: string) => { setLabel(l); setName(n); setSide(s as "eDS" | "HITS"); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    await addModule(flowId, { label: label.trim(), name: name.trim(), side, note: note.trim() });
+    await addModule(flowId, { label: label.trim(), name: name.trim(), side, note: note.trim(), parallel_group: parGroup.trim() || undefined });
     setSaving(false);
     onClose();
   };
@@ -120,6 +127,20 @@ function AddModuleModal({ flowId, onClose }: { flowId: string; onClose: () => vo
               <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. First Time?" />
             </div>
           </div>
+          <div className="form-row-2">
+            <div style={{ flex: 1 }}>
+              <label>Parallel Group <span className="label-hint">(optional — same name = run in parallel)</span></label>
+              <input
+                list="par-group-list"
+                value={parGroup}
+                onChange={e => setParGroup(e.target.value)}
+                placeholder="e.g. branch-A"
+              />
+              <datalist id="par-group-list">
+                {existingGroups.map(g => <option key={g} value={g} />)}
+              </datalist>
+            </div>
+          </div>
           <div className="modal-actions">
             <button type="button" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={saving}>{saving ? "Adding…" : "Add Module"}</button>
@@ -134,6 +155,7 @@ function MainPanel({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () =
   const { activeFlow, state, setTab } = useApp();
   const { isOwner } = useAuth();
   const [showAddMod, setShowAddMod] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   if (state.loading) {
     return (
@@ -177,11 +199,36 @@ function MainPanel({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () =
           {activeFlow && isOwner(activeFlow.created_by) && (
             <button className="btn-sm" onClick={() => setShowAddMod(true)}>+ Module</button>
           )}
-          <button className="btn-export">
-            <svg><use href="#i-download" /></svg>
-            Export Report
-          </button>
-          <div className="avatar" title={activeFlow?.name}>{flowInitial}</div>
+          <div style={{ position: 'relative' }}>
+            <button className="btn-export" onClick={() => activeFlow && setShowExport(v => !v)} disabled={!activeFlow}>
+              <svg><use href="#i-download" /></svg>
+              Export Report
+              <svg style={{ width: 10, height: 10, marginLeft: 2 }} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4"/></svg>
+            </button>
+            {showExport && activeFlow && (
+              <div
+                style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, boxShadow: 'var(--shadow-lg)', zIndex: 99, minWidth: 160, overflow: 'hidden' }}
+                onMouseLeave={() => setShowExport(false)}
+              >
+                <button
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', textAlign: 'left' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  onClick={() => { exportReport(activeFlow); setShowExport(false); }}
+                >
+                  🌐 HTML Report
+                </button>
+                <button
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', textAlign: 'left' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  onClick={() => { exportExcel(activeFlow); setShowExport(false); }}
+                >
+                  📊 Excel (.xlsx)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

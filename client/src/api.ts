@@ -45,12 +45,12 @@ export const api = {
   // Flows
   getFlows:   (): Promise<Flow[]>  =>
     fetch(`${BASE}/flows`, { headers: authHeader() }).then(json),
-  createFlow: (name: string, description: string): Promise<Flow> =>
-    post(`${BASE}/flows`, { name, description }),
+  createFlow: (name: string, description: string, group_name = ''): Promise<Flow> =>
+    post(`${BASE}/flows`, { name, description, group_name }),
   deleteFlow: (id: string) => del(`${BASE}/flows/${id}`),
 
   // Modules
-  addModule: (flowId: string, data: { label: string; name: string; side: string; note: string }) =>
+  addModule: (flowId: string, data: { label: string; name: string; side: string; note: string; parallel_group?: string }) =>
     post(`${BASE}/flows/${flowId}/modules`, data),
   updateModule: (id: string, data: object) => put(`${BASE}/modules/${id}`, data),
   deleteModule: (id: string) => del(`${BASE}/modules/${id}`),

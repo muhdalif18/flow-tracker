@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
@@ -71,23 +72,27 @@ async function initDB() {
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
+        group_name  TEXT NOT NULL DEFAULT '',
         created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         order_idx   INTEGER NOT NULL DEFAULT 0,
         created_by  TEXT REFERENCES users(id)
       )
     `);
+    await client.query(`ALTER TABLE flows ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT ''`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS modules (
-        id         TEXT PRIMARY KEY,
-        flow_id    TEXT NOT NULL REFERENCES flows(id) ON DELETE CASCADE,
-        label      TEXT NOT NULL,
-        name       TEXT NOT NULL,
-        side       TEXT NOT NULL DEFAULT 'eDS',
-        note       TEXT NOT NULL DEFAULT '',
-        order_idx  INTEGER NOT NULL DEFAULT 0,
-        created_by TEXT REFERENCES users(id)
+        id             TEXT PRIMARY KEY,
+        flow_id        TEXT NOT NULL REFERENCES flows(id) ON DELETE CASCADE,
+        label          TEXT NOT NULL,
+        name           TEXT NOT NULL,
+        side           TEXT NOT NULL DEFAULT 'eDS',
+        note           TEXT NOT NULL DEFAULT '',
+        parallel_group TEXT,
+        order_idx      INTEGER NOT NULL DEFAULT 0,
+        created_by     TEXT REFERENCES users(id)
       )
     `);
+    await client.query(`ALTER TABLE modules ADD COLUMN IF NOT EXISTS parallel_group TEXT`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS scenarios (
         id             TEXT PRIMARY KEY,
@@ -276,14 +281,14 @@ app.get('/api/flows', async (_req, res) => {
 });
 
 app.post('/api/flows', async (req: AuthRequest, res) => {
-  const { name, description = '' } = req.body;
+  const { name, description = '', group_name = '' } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
   const id = uuidv4();
   const { rows } = await pool.query('SELECT MAX(order_idx) AS mx FROM flows');
   const order = (rows[0]?.mx ?? -1) + 1;
   await pool.query(
-    'INSERT INTO flows (id, name, description, order_idx, created_by) VALUES ($1,$2,$3,$4,$5)',
-    [id, name.trim(), description.trim(), order, req.user!.userId]
+    'INSERT INTO flows (id, name, description, group_name, order_idx, created_by) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, name.trim(), description.trim(), group_name.trim(), order, req.user!.userId]
   );
   const flows = await getAllFlows();
   res.json(flows.find(f => f.id === id));
@@ -302,13 +307,13 @@ app.delete('/api/flows/:id', async (req: AuthRequest, res) => {
 app.post('/api/flows/:flowId/modules', async (req: AuthRequest, res) => {
   if (!canEdit(await getFlowOwner(req.params.flowId), req.user!.userId))
     return res.status(403).json({ error: 'You can only add modules to your own flows' });
-  const { label, name, side = 'eDS', note = '' } = req.body;
+  const { label, name, side = 'eDS', note = '', parallel_group = null } = req.body;
   if (!label?.trim() || !name?.trim()) return res.status(400).json({ error: 'label and name required' });
   const id = uuidv4();
   const order = await nextOrder('modules', 'flow_id', req.params.flowId);
   await pool.query(
-    'INSERT INTO modules (id, flow_id, label, name, side, note, order_idx, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-    [id, req.params.flowId, label.trim(), name.trim(), side, note.trim(), order, req.user!.userId]
+    'INSERT INTO modules (id, flow_id, label, name, side, note, parallel_group, order_idx, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [id, req.params.flowId, label.trim(), name.trim(), side, note.trim(), parallel_group || null, order, req.user!.userId]
   );
   const { rows } = await pool.query(`
     SELECT m.*, u.username AS created_by_name FROM modules m

@@ -46,9 +46,42 @@ export function modStatus(mod: Module): ModuleStatus {
   return 'pending';
 }
 
+export function getSlots(modules: Module[]): Module[][] {
+  const sorted = [...modules].sort((a, b) => a.order_idx - b.order_idx);
+  const slots: Module[][] = [];
+  const groupMap = new Map<string, Module[]>();
+  for (const mod of sorted) {
+    if (!mod.parallel_group) {
+      slots.push([mod]);
+    } else {
+      if (!groupMap.has(mod.parallel_group)) {
+        const slot: Module[] = [];
+        groupMap.set(mod.parallel_group, slot);
+        slots.push(slot);
+      }
+      groupMap.get(mod.parallel_group)!.push(mod);
+    }
+  }
+  return slots;
+}
+
+export function slotStatus(slot: Module[]): ModuleStatus {
+  if (slot.length === 1) return modStatus(slot[0]);
+  const statuses = slot.map(modStatus);
+  if (statuses.some(s => s === 'blocked'))   return 'blocked';
+  if (statuses.some(s => s === 'major'))     return 'major';
+  if (statuses.some(s => s === 'minor'))     return 'minor';
+  if (statuses.every(s => s === 'complete')) return 'complete';
+  if (statuses.some(s => s === 'progress' || s === 'complete')) return 'progress';
+  return 'pending';
+}
+
 export function isGated(flow: Flow, modIdx: number): boolean {
-  for (let i = 0; i < modIdx; i++) {
-    if (modStatus(flow.modules[i]) === 'blocked') return true;
+  const target     = flow.modules[modIdx];
+  const slots      = getSlots(flow.modules);
+  const targetSlot = slots.findIndex(s => s.some(m => m.id === target.id));
+  for (let i = 0; i < targetSlot; i++) {
+    if (slotStatus(slots[i]) === 'blocked') return true;
   }
   return false;
 }

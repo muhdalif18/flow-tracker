@@ -245,7 +245,7 @@ html, body, #root {
 }
 
 .fi-info { flex: 1; min-width: 0; }
-.fi-name { font-size: 12px; color: var(--sidebar-ink); line-height: 1.35; word-break: break-word; font-weight: 500; }
+.fi-name { font-size: 12px; color: var(--sidebar-ink); line-height: 1.35; word-break: break-word; font-weight: 500; text-transform: uppercase; }
 .flow-item.active .fi-name { color: #f1f5f9; }
 
 .fi-progress { height: 2px; background: rgba(255,255,255,.08); border-radius: 99px; margin-top: 4px; overflow: hidden; }
@@ -261,6 +261,28 @@ html, body, #root {
 .fi-del:hover { background: rgba(220,38,38,.25); color: #fca5a5; }
 
 .sb-empty { font-size: 11px; color: var(--sidebar-muted); text-align: center; padding: 16px 8px; line-height: 1.5; }
+
+/* ── Flow item child (inside group) ──────────────────────────────────────── */
+.flow-item--child { margin-left: 10px; border-left: 2px solid rgba(255,255,255,.07); border-radius: 0 6px 6px 0; }
+
+/* ── Flow group ──────────────────────────────────────────────────────────── */
+.flow-group { margin: 2px 0; }
+.flow-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  color: var(--sidebar-muted); font-size: 11px; font-weight: 600;
+  letter-spacing: .03em; text-transform: uppercase;
+  user-select: none; transition: background .15s;
+}
+.flow-group-header:hover { background: var(--sidebar-hover); color: var(--sidebar-ink-2); }
+.flow-group--active > .flow-group-header { color: #93c5fd; }
+.flow-group-chevron { width: 12px; height: 12px; flex-shrink: 0; transition: transform .2s; }
+.flow-group-name { flex: 1; min-width: 0; word-break: break-word; }
+.flow-group-count {
+  font-size: 10px; background: rgba(255,255,255,.08); border-radius: 99px;
+  padding: 1px 6px; flex-shrink: 0; font-weight: 500;
+}
+.flow-group-body { margin-left: 4px; }
 
 .sb-new {
   margin: 8px;
@@ -814,6 +836,30 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   display: flex; align-items: center; justify-content: center;
   z-index: 999; backdrop-filter: blur(3px); animation: fadeIn .15s ease;
 }
+
+/* ── Confirm dialog ──────────────────────────────────────────────────────── */
+.confirm-box {
+  background: var(--panel); border-radius: var(--r-lg);
+  padding: 28px 28px 22px; min-width: 320px; max-width: 420px; width: 90vw;
+  box-shadow: var(--shadow-lg); animation: slideUp .18s var(--ease);
+  display: flex; flex-direction: column; gap: 20px;
+}
+.confirm-msg { font-size: 14px; color: var(--ink); font-weight: 500; line-height: 1.5; margin: 0; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-cancel {
+  padding: 7px 16px; border-radius: 7px; border: 1px solid var(--line);
+  background: none; color: var(--ink-2); font-size: 13px; cursor: pointer;
+  transition: background .15s;
+}
+.confirm-cancel:hover { background: var(--bg); }
+.confirm-ok {
+  padding: 7px 18px; border-radius: 7px; border: none;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
+}
+.confirm-ok--danger { background: #dc2626; color: #fff; }
+.confirm-ok--danger:hover { opacity: .88; }
+.confirm-ok:not(.confirm-ok--danger) { background: var(--blue); color: #fff; }
+.confirm-ok:not(.confirm-ok--danger):hover { opacity: .88; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
 
@@ -894,7 +940,60 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 }
 .step-desc-inp::placeholder { color: var(--ink-4); }
 
-.step-body { padding: 12px; }
+.step-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Step textarea ───────────────────────────────────────────────────────── */
+.step-textarea {
+  width: 100%; font-family: var(--sans); font-size: 12.5px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 7px 10px; background: var(--bg); outline: none; resize: vertical;
+  transition: border-color var(--t); box-sizing: border-box;
+}
+.step-textarea::placeholder { color: var(--ink-4); }
+.step-textarea:focus { border-color: var(--blue-2); box-shadow: 0 0 0 3px rgba(29,78,216,.08); }
+.step-textarea[readonly] { background: var(--hover); }
+
+/* ── Step status + issue row ─────────────────────────────────────────────── */
+.step-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.step-issue-row  { display: flex; align-items: center; gap: 5px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--line); }
+
+/* ── Step meta row (date / ado / url) ────────────────────────────────────── */
+.step-meta-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.step-meta-inp {
+  flex: 1; min-width: 100px; font-family: var(--sans); font-size: 12px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 5px 9px; background: var(--bg); outline: none;
+  transition: border-color var(--t);
+}
+.step-meta-url { flex: 2; min-width: 160px; }
+.step-meta-inp:focus { border-color: var(--blue-2); }
+.step-meta-inp[readonly] { background: var(--hover); }
+
+/* ── Step screenshots ────────────────────────────────────────────────────── */
+.step-photos { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.step-photo-thumb {
+  position: relative; width: 60px; height: 60px;
+  border-radius: var(--r-sm); overflow: hidden;
+  border: 1px solid var(--line); cursor: pointer; flex-shrink: 0;
+}
+.step-photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .15s; }
+.step-photo-thumb:hover img { opacity: .75; }
+.step-photo-del {
+  position: absolute; top: 2px; right: 2px;
+  width: 16px; height: 16px; border-radius: 99px;
+  background: rgba(220,38,38,.9); color: #fff; border: none; cursor: pointer;
+  font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
+}
+.step-photo-thumb:hover .step-photo-del { opacity: 1; }
+.step-photo-add {
+  width: 60px; height: 60px; border-radius: var(--r-sm);
+  border: 1.5px dashed var(--line); cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: var(--ink-3); transition: all .15s; user-select: none;
+}
+.step-photo-add:hover { border-color: var(--blue-2); color: var(--blue-2); background: var(--blue-soft); }
+.step-photo-add--loading { opacity: .6; pointer-events: none; }
 
 .step-count-badge {
   display: inline-block; margin-left: 8px;

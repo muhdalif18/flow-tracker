@@ -2,16 +2,12 @@ import { useState } from "react";
 import { useApp } from "../AppContext";
 import { useAuth } from "../AuthContext";
 import { flowStats, modStatus } from "../utils";
+import type { Flow } from "../types";
+import { useConfirm } from "./ConfirmModal";
 
 function NavIcoDash() {
   return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
+    <svg className="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
       <rect x="2" y="2" width="5" height="5" rx="1" />
       <rect x="9" y="2" width="5" height="5" rx="1" />
       <rect x="2" y="9" width="5" height="5" rx="1" />
@@ -20,31 +16,9 @@ function NavIcoDash() {
   );
 }
 
-function NavIcoFlow() {
-  return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
-      <rect x="2" y="4" width="5" height="8" rx="1" />
-      <rect x="9" y="4" width="5" height="8" rx="1" />
-      <path d="M7 8h2" />
-    </svg>
-  );
-}
-
 function NavIcoTrace() {
   return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
+    <svg className="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
       <rect x="2" y="3" width="12" height="10" rx="1.5" />
       <path d="M5 7h6M5 10h4" strokeLinecap="round" />
     </svg>
@@ -53,249 +27,226 @@ function NavIcoTrace() {
 
 function NavIcoPlay() {
   return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
+    <svg className="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
       <circle cx="8" cy="8" r="6.3" />
       <path d="M7 5.5l4 2.5-4 2.5z" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
-function NavIcoDoc() {
+
+function getDotColor(flow: Flow) {
+  const hasBlocker = flow.modules.some((m) => modStatus(m) === "blocked");
+  const st = flowStats(flow);
+  if (hasBlocker) return "#dc2626";
+  if (st.fail > 0) return "#d97706";
+  if (st.pass > 0 && st.untested === 0 && st.fail === 0) return "#16a34a";
+  if (st.pass > 0) return "#1d4ed8";
+  return "#475569";
+}
+
+function FlowItem({ flow, indent = false }: { flow: Flow; indent?: boolean }) {
+  const { state, setActive, deleteFlow } = useApp();
+  const { isOwner } = useAuth();
+  const { confirm, modal } = useConfirm();
+  const st = flowStats(flow);
+  const dot = getDotColor(flow);
+  const pct = st.total > 0 ? Math.round((st.pass / st.total) * 100) : 0;
+  const isActive = flow.id === state.activeFlowId;
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!await confirm({ message: `Delete "${flow.name}" and all its data?`, confirmLabel: 'Delete' })) return;
+    await deleteFlow(flow.id);
+  };
+
   return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinejoin="round"
-    >
-      <path d="M4 2h6l3 3v9H4V2z" />
-      <path d="M10 2v3h3M6 8h5M6 11h5" />
-    </svg>
+    <>
+      {modal}
+      <div
+        className={`flow-item ${isActive ? "active" : ""} ${indent ? "flow-item--child" : ""}`}
+        onClick={() => setActive(flow.id)}
+      >
+        <div className="fi-dot" style={{ background: dot }} />
+        <div className="fi-info">
+          <div className="fi-name">{flow.name}</div>
+          {st.total > 0 && (
+            <div className="fi-progress">
+              <div className="fi-progress-fill" style={{ width: `${pct}%`, background: dot }} />
+            </div>
+          )}
+        </div>
+        {isOwner(flow.created_by) && (
+          <button className="fi-del" onClick={handleDelete} title="Delete flow">×</button>
+        )}
+      </div>
+    </>
   );
 }
 
-function NavIcoHelp() {
+function GroupSection({ name, flows }: { name: string; flows: Flow[] }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const { state } = useApp();
+  const hasActive = flows.some(f => f.id === state.activeFlowId);
+
   return (
-    <svg
-      className="nav-ico"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-    >
-      <circle cx="8" cy="8" r="6.3" />
-      <path d="M6 6.3a2 2 0 113 1.7c-.5.3-1 .6-1 1.2" strokeLinecap="round" />
-      <circle cx="8" cy="11.5" r=".7" fill="currentColor" stroke="none" />
-    </svg>
+    <div className={`flow-group ${hasActive ? "flow-group--active" : ""}`}>
+      <div className="flow-group-header" onClick={() => setCollapsed(c => !c)}>
+        <svg
+          className="flow-group-chevron"
+          style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}
+          viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"
+        >
+          <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="flow-group-name">{name}</span>
+        <span className="flow-group-count">{flows.length}</span>
+      </div>
+      {!collapsed && (
+        <div className="flow-group-body">
+          {flows.map(f => <FlowItem key={f.id} flow={f} indent />)}
+        </div>
+      )}
+    </div>
   );
 }
 
 export function Sidebar() {
-  const { state, setActive, setTab, createFlow, deleteFlow } = useApp();
-  const { user, isOwner, logout } = useAuth();
+  const { state, setTab, createFlow } = useApp();
+  const { user, logout } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
+  const [group, setGroup] = useState("");
+
+  // Collect existing group names for autocomplete
+  const existingGroups = Array.from(
+    new Set(state.flows.map(f => f.group_name).filter(Boolean))
+  );
+
+  // Split flows into ungrouped and grouped
+  const ungrouped = state.flows.filter(f => !f.group_name);
+  const grouped = new Map<string, Flow[]>();
+  for (const f of state.flows) {
+    if (!f.group_name) continue;
+    if (!grouped.has(f.group_name)) grouped.set(f.group_name, []);
+    grouped.get(f.group_name)!.push(f);
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    await createFlow(name.trim(), desc.trim());
+    await createFlow(name.trim(), desc.trim(), group.trim());
     setName("");
     setDesc("");
+    setGroup("");
     setShowForm(false);
-  };
-
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!confirm("Delete this flow and all its data?")) return;
-    await deleteFlow(id);
-  };
-
-  const getDotColor = (flow: (typeof state.flows)[0]) => {
-    const hasBlocker = flow.modules.some((m) => modStatus(m) === "blocked");
-    const st = flowStats(flow);
-    if (hasBlocker) return "#dc2626";
-    if (st.fail > 0) return "#d97706";
-    if (st.pass > 0 && st.untested === 0 && st.fail === 0) return "#16a34a";
-    if (st.pass > 0) return "#1d4ed8";
-    return "#475569";
   };
 
   return (
     <aside className="sidebar">
-      {/* Brand header */}
+      {/* Brand */}
       <div className="sb-header">
         <div className="sb-mark">FT</div>
         <div>
           <div className="sb-title">Flow Tracker</div>
-          <div className="sb-sub">V2.4.0-STABLE</div>
+          <div className="sb-sub">V2.5.0-STABLE</div>
         </div>
       </div>
 
       {/* Main nav */}
       <div className="side-section">Main</div>
       <nav className="nav">
-        <div
-          className={`nav-item ${state.activeTab === "blid" ? "on" : ""}`}
-          onClick={() => setTab("blid")}
-        >
-          <NavIcoDash />
-          Dashboard
+        <div className={`nav-item ${state.activeTab === "blid" ? "on" : ""}`} onClick={() => setTab("blid")}>
+          <NavIcoDash />Dashboard
         </div>
-        {/* <div className="nav-item" onClick={() => setTab('diagram')}>
-          <NavIcoFlow />
-          Flow Selection
-        </div> */}
-        <div
-          className={`nav-item ${state.activeTab === "diagram" ? "on" : ""}`}
-          onClick={() => setTab("diagram")}
-        >
-          <NavIcoTrace />
-          Traceability
+        <div className={`nav-item ${state.activeTab === "diagram" ? "on" : ""}`} onClick={() => setTab("diagram")}>
+          <NavIcoTrace />Traceability
         </div>
-        <div
-          className={`nav-item ${state.activeTab === "scenarios" ? "on" : ""}`}
-          onClick={() => setTab("scenarios")}
-        >
-          <NavIcoPlay />
-          Execution
+        <div className={`nav-item ${state.activeTab === "scenarios" ? "on" : ""}`} onClick={() => setTab("scenarios")}>
+          <NavIcoPlay />Execution
         </div>
       </nav>
 
-      {/* Flows list */}
+      {/* Flows */}
       <div className="sb-section-label">Flows</div>
       <div className="flow-list">
         {state.loading && <div className="sb-empty">Loading…</div>}
         {!state.loading && state.flows.length === 0 && (
-          <div className="sb-empty">
-            No flows yet.
-            <br />
-            Create one below.
-          </div>
+          <div className="sb-empty">No flows yet.<br />Create one below.</div>
         )}
-        {state.flows.map((flow) => {
-          const st = flowStats(flow);
-          const dot = getDotColor(flow);
-          const pct = st.total > 0 ? Math.round((st.pass / st.total) * 100) : 0;
 
-          return (
-            <div
-              key={flow.id}
-              className={`flow-item ${flow.id === state.activeFlowId ? "active" : ""}`}
-              onClick={() => setActive(flow.id)}
-            >
-              <div className="fi-dot" style={{ background: dot }} />
-              <div className="fi-info">
-                <div className="fi-name">{flow.name}</div>
-                {st.total > 0 && (
-                  <div className="fi-progress">
-                    <div
-                      className="fi-progress-fill"
-                      style={{ width: `${pct}%`, background: dot }}
-                    />
-                  </div>
-                )}
-              </div>
-              {isOwner(flow.created_by) && (
-                <button
-                  className="fi-del"
-                  onClick={(e) => handleDelete(e, flow.id)}
-                  title="Delete flow"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {/* Ungrouped flows */}
+        {ungrouped.map(f => <FlowItem key={f.id} flow={f} />)}
+
+        {/* Grouped flows */}
+        {Array.from(grouped.entries()).map(([groupName, flows]) => (
+          <GroupSection key={groupName} name={groupName} flows={flows} />
+        ))}
       </div>
 
+      {/* Create form */}
       {showForm ? (
         <form className="sb-form" onSubmit={handleCreate}>
           <input
             autoFocus
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={e => setName(e.target.value)}
             placeholder="Flow name *"
             required
             className="sb-input"
           />
           <input
             value={desc}
-            onChange={(e) => setDesc(e.target.value)}
+            onChange={e => setDesc(e.target.value)}
             placeholder="Description (optional)"
             className="sb-input"
           />
+          <input
+            list="group-list"
+            value={group}
+            onChange={e => setGroup(e.target.value)}
+            placeholder="Group (optional)"
+            className="sb-input"
+          />
+          <datalist id="group-list">
+            {existingGroups.map(g => <option key={g} value={g} />)}
+          </datalist>
           <div className="sb-form-btns">
-            <button
-              type="button"
-              className="sb-cancel"
-              onClick={() => {
-                setShowForm(false);
-                setName("");
-                setDesc("");
-              }}
-            >
+            <button type="button" className="sb-cancel" onClick={() => { setShowForm(false); setName(""); setDesc(""); setGroup(""); }}>
               Cancel
             </button>
-            <button type="submit" className="sb-create">
-              Create
-            </button>
+            <button type="submit" className="sb-create">Create</button>
           </div>
         </form>
       ) : (
-        <button className="sb-new" onClick={() => setShowForm(true)}>
-          + New Flow
-        </button>
+        <button className="sb-new" onClick={() => setShowForm(true)}>+ New Flow</button>
       )}
 
       <div className="side-spacer" />
 
-      {/* Footer nav */}
+      {/* Footer */}
       <div className="side-foot">
-        <div style={{ padding: '6px 12px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: "6px 12px 8px", display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
-            width: 28, height: 28, borderRadius: 7, background: 'var(--blue-2)',
-            display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 700, fontSize: 12, flexShrink: 0,
+            width: 28, height: 28, borderRadius: 7, background: "var(--blue-2)",
+            display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0,
           }}>
             {user?.username[0].toUpperCase()}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--sidebar-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {user?.username}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>Signed in</div>
+            <div style={{ fontSize: 10, color: "var(--sidebar-muted)" }}>Signed in</div>
           </div>
-          <button
-            onClick={logout}
-            title="Sign out"
-            style={{
-              background: 'none', border: '1px solid var(--line)', borderRadius: 5,
-              color: 'var(--ink-3)', cursor: 'pointer', fontSize: 11, padding: '3px 7px',
-            }}
-          >
+          <button onClick={logout} title="Sign out" style={{
+            background: "none", border: "1px solid rgba(255,255,255,.15)", borderRadius: 5,
+            color: "var(--sidebar-muted)", cursor: "pointer", fontSize: 11, padding: "3px 7px",
+          }}>
             Out
           </button>
         </div>
-        <nav className="nav" style={{ padding: 0 }}>
-          <div className="nav-item">
-            <NavIcoDoc />
-            Documentation
-          </div>
-          <div className="nav-item">
-            <NavIcoHelp />
-            Support
-          </div>
-        </nav>
       </div>
     </aside>
   );

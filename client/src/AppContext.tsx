@@ -48,9 +48,9 @@ interface AppContextValue {
   setActive: (id: string | null) => void;
   setTab: (tab: ActiveTab) => void;
   toggleExpand: (id: string) => void;
-  createFlow: (name: string, desc: string) => Promise<void>;
+  createFlow: (name: string, desc: string, group?: string) => Promise<void>;
   deleteFlow: (id: string) => Promise<void>;
-  addModule: (flowId: string, data: { label: string; name: string; side: string; note: string }) => Promise<void>;
+  addModule: (flowId: string, data: { label: string; name: string; side: string; note: string; parallel_group?: string }) => Promise<void>;
   deleteModule: (id: string) => Promise<void>;
   moveModule: (flowId: string, moduleId: string, dir: -1 | 1) => Promise<void>;
   addScenario: (moduleId: string, data: { blid: string; description: string }) => Promise<void>;
@@ -79,8 +79,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { loadFlows(); }, [loadFlows]);
 
-  const createFlow = useCallback(async (name: string, desc: string) => {
-    const flow = await api.createFlow(name, desc);
+  const createFlow = useCallback(async (name: string, desc: string, group = '') => {
+    const flow = await api.createFlow(name, desc, group);
     await loadFlows(flow.id);
   }, [loadFlows]);
 
@@ -91,7 +91,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_FLOWS', flows, keepActive: state.activeFlowId !== id ? state.activeFlowId : newActive });
   }, [state.activeFlowId]);
 
-  const addModule    = useCallback(async (fid: string, d: { label: string; name: string; side: string; note: string }) => { await api.addModule(fid, d);      await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
+  const addModule    = useCallback(async (fid: string, d: { label: string; name: string; side: string; note: string; parallel_group?: string }) => { await api.addModule(fid, d);      await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const deleteModule = useCallback(async (id: string) => { await api.deleteModule(id);    await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const moveModule   = useCallback(async (fid: string, mid: string, dir: -1 | 1) => { await api.reorderModule(fid, mid, dir); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const addScenario  = useCallback(async (mid: string, d: { blid: string; description: string }) => { await api.addScenario(mid, d); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);

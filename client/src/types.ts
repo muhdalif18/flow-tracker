@@ -29,6 +29,7 @@ export interface Module {
   name: string;
   side: 'eDS' | 'HITS';
   note: string;
+  parallel_group: string | null;
   order_idx: number;
   created_by: string | null;
   created_by_name: string | null;
@@ -39,6 +40,7 @@ export interface Flow {
   id: string;
   name: string;
   description: string;
+  group_name: string;
   created_at: string;
   order_idx: number;
   created_by: string | null;

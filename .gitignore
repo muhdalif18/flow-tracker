@@ -15,9 +15,13 @@ server/dist/
 .env
 .env.local
 .env.*.local
+server/.env
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Local uploads
+uploads/
 
 # OS files
 .DS_Store

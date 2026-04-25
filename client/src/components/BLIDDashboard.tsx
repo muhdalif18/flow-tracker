@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useApp } from '../AppContext';
 import { useAuth } from '../AuthContext';
 import { flowStats, modStats, modStatus, scenarioStatus, scenarioIssueType } from '../utils';
+import { DiagnosticsModal } from './DiagnosticsModal';
+import type { Flow } from '../types';
 
 function CheckIcon({ size = 16 }: { size?: number }) {
   return (
@@ -44,21 +46,18 @@ function SortIcon() {
   );
 }
 
-export function BLIDDashboard() {
-  const { activeFlow } = useApp();
-  const { user, isOwner } = useAuth();
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+function ChevronIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+      <path d="M4 6l4 4 4-4"/>
+    </svg>
+  );
+}
 
-  if (!activeFlow) return null;
-
-  const ownerName     = activeFlow.created_by_name;
-  const isMyFlow      = isOwner(activeFlow.created_by);
-  const viewingBanner = !isMyFlow && ownerName;
-
-  const st  = flowStats(activeFlow);
-  const all = activeFlow.modules.flatMap(m => m.scenarios);
-
-  const modRows = activeFlow.modules
+// ── Per-flow module rows helper ───────────────────────────────────────────────
+function buildModRows(flow: Flow) {
+  return flow.modules
     .map(mod => {
       const blids  = [...new Set(mod.scenarios.map(s => s.blid).filter(Boolean))];
       const passed = blids.filter(b => mod.scenarios.filter(s => s.blid === b).some(s => scenarioStatus(s) === 'pass'));
@@ -68,41 +67,81 @@ export function BLIDDashboard() {
       return { mod, blids, passed, ms, pct, status };
     })
     .filter(r => r.blids.length > 0);
+}
 
-  const failMap = new Map<string, { blid: string; desc: string; issue: string | null; mod: string }>();
-  for (const sc of all) {
-    if (scenarioStatus(sc) === 'fail' && sc.blid && !failMap.has(sc.blid)) {
-      const modLabel = activeFlow.modules.find(m => m.scenarios.includes(sc))?.label ?? '';
-      failMap.set(sc.blid, { blid: sc.blid, desc: sc.description, issue: scenarioIssueType(sc), mod: modLabel });
+export function BLIDDashboard() {
+  const { activeFlow, state } = useApp();
+  const { user, isOwner } = useAuth();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
+  const [collapsedFlows, setCollapsedFlows] = useState<Set<string>>(new Set());
+
+  if (!activeFlow) return null;
+
+  const ownerName     = activeFlow.created_by_name;
+  const isMyFlow      = isOwner(activeFlow.created_by);
+  const viewingBanner = !isMyFlow && ownerName;
+
+  const st  = flowStats(activeFlow);
+
+  // ── Group flows ───────────────────────────────────────────────────────────
+  const groupFlows = activeFlow.group_name
+    ? state.flows.filter(f => f.group_name === activeFlow.group_name)
+    : [activeFlow];
+  const isGrouped = activeFlow.group_name && groupFlows.length > 1;
+
+  // ── Group-level BLID coverage ─────────────────────────────────────────────
+  const groupAll     = groupFlows.flatMap(f => f.modules.flatMap(m => m.scenarios));
+  const groupBlids   = [...new Set(groupAll.map(s => s.blid).filter(Boolean))];
+  const groupPassed  = groupBlids.filter(b => groupAll.filter(s => s.blid === b).some(s => scenarioStatus(s) === 'pass'));
+  const groupBlidPct = groupBlids.length ? Math.round(groupPassed.length / groupBlids.length * 100) : 0;
+
+  // ── Per-flow module rows ──────────────────────────────────────────────────
+  const flowModRows = groupFlows.map(f => ({ flow: f, rows: buildModRows(f) })).filter(f => f.rows.length > 0);
+
+  const toggleFlow = (id: string) => {
+    setCollapsedFlows(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // ── Failing BLIDs (group-wide) ────────────────────────────────────────────
+  const failMap = new Map<string, { blid: string; desc: string; issue: string | null; mod: string; flowName: string }>();
+  for (const f of groupFlows) {
+    const fAll = f.modules.flatMap(m => m.scenarios);
+    for (const sc of fAll) {
+      if (scenarioStatus(sc) === 'fail' && sc.blid && !failMap.has(sc.blid)) {
+        const modLabel = f.modules.find(m => m.scenarios.includes(sc))?.label ?? '';
+        failMap.set(sc.blid, { blid: sc.blid, desc: sc.description, issue: scenarioIssueType(sc), mod: modLabel, flowName: f.name });
+      }
     }
   }
   const failingBLIDs = [...failMap.values()];
 
   const allPass = st.fail === 0 && st.pass > 0 && failingBLIDs.length === 0;
 
-  /* Health metrics derived from flow state */
-  const hasBlocker = activeFlow.modules.some(m => modStatus(m) === 'blocked');
+  const hasBlocker      = activeFlow.modules.some(m => modStatus(m) === 'blocked');
   const integrityStatus = hasBlocker ? 'fail' : st.fail === 0 && st.pass > 0 ? 'pass' : 'warn';
-  const syncStatus = st.total > 0 ? 'active' : 'warn';
+  const syncStatus      = st.total > 0 ? 'active' : 'warn';
 
-  /* Historical trend bars — real execution % as final bar, padded with synthetic history */
+  const coveragePct = isGrouped ? groupBlidPct : st.blidPct;
+
   const currentPct = st.execPct;
   const trendBars = [
-    Math.max(5, currentPct - 65),
-    Math.max(5, currentPct - 55),
-    Math.max(5, currentPct - 42),
-    Math.max(5, currentPct - 30),
-    Math.max(5, currentPct - 18),
-    Math.max(5, currentPct - 8),
+    Math.max(5, currentPct - 65), Math.max(5, currentPct - 55),
+    Math.max(5, currentPct - 42), Math.max(5, currentPct - 30),
+    Math.max(5, currentPct - 18), Math.max(5, currentPct - 8),
     currentPct,
   ].map(v => Math.min(100, v));
 
   const kpis = [
     {
-      label: 'URS Coverage',
-      right: <span className="kpi-chip">Full</span>,
-      value: <><span className="kpi-val">{st.blidPct}<span className="kpi-val-unit">%</span></span></>,
-      barPct: st.blidPct,
+      label: isGrouped ? 'Group BLID Coverage' : 'URS Coverage',
+      right: <span className="kpi-chip">{isGrouped ? activeFlow.group_name : 'Full'}</span>,
+      value: <><span className="kpi-val">{coveragePct}<span className="kpi-val-unit">%</span></span></>,
+      barPct: coveragePct,
       sub: null,
     },
     {
@@ -147,7 +186,7 @@ export function BLIDDashboard() {
 
   return (
     <div>
-      {/* Ownership context bar */}
+      {/* Ownership bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
         padding: '9px 14px', borderRadius: 9,
@@ -175,7 +214,7 @@ export function BLIDDashboard() {
           )}
         </div>
         <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)' }}>
-          {activeFlow.name}
+          {isGrouped ? activeFlow.group_name : activeFlow.name}
         </span>
       </div>
 
@@ -196,16 +235,24 @@ export function BLIDDashboard() {
         ))}
       </div>
 
-      {/* Per-module breakdown table */}
-      {modRows.length > 0 && (
+      {/* Per-module BLID breakdown */}
+      {flowModRows.length > 0 && (
         <div className="section">
           <div className="section-head">
-            <div className="section-title-lg">Per-Module BLID Breakdown</div>
+            <div className="section-title-lg">
+              Per-Module BLID Breakdown
+              {isGrouped && (
+                <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', marginLeft: 8 }}>
+                  {groupBlids.length} BLIDs · {groupPassed.length} passed · {groupBlidPct}% group coverage
+                </span>
+              )}
+            </div>
             <div className="section-actions">
               <button className="btn-outline"><FilterIcon />Filter</button>
               <button className="btn-outline"><SortIcon />Sort</button>
             </div>
           </div>
+
           <table className="tbl">
             <thead>
               <tr>
@@ -219,46 +266,93 @@ export function BLIDDashboard() {
               </tr>
             </thead>
             <tbody>
-              {modRows.map(r => (
-                <tr key={r.mod.id}>
-                  <td>
-                    <div className="tbl-mod-cell">
-                      <span className="tbl-mod-main">{r.mod.label}: {r.mod.name}</span>
-                      <span className="tbl-mod-sub">{r.mod.side} System</span>
-                    </div>
-                  </td>
-                  <td>
-                    <span style={{
-                      fontSize: 11.5, fontWeight: 600,
-                      color: r.mod.created_by === user?.userId ? 'var(--blue-2)' : 'var(--ink-3)',
-                    }}>
-                      {r.mod.created_by === user?.userId ? 'You' : (r.mod.created_by_name ?? '—')}
-                    </span>
-                  </td>
-                  <td><span className="blid-link">{r.blids.join(', ')}</span></td>
-                  <td style={{ fontWeight: 600 }}>{r.passed.length}</td>
-                  <td>
-                    <div className="cov-row">
-                      <div className="cov-track">
-                        <div className="cov-fill" style={{ width: `${r.pct}%` }} />
-                      </div>
-                      <span className="cov-pct">{r.pct}%</span>
-                    </div>
-                  </td>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--ink-3)' }}>
-                    <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{r.ms.pass}P</span>{' '}
-                    <span style={{ color: 'var(--bad)', fontWeight: 600 }}>{r.ms.fail}F</span>{' '}
-                    <span style={{ fontWeight: 500 }}>{r.ms.untested}U</span>
-                  </td>
-                  <td>{getStatusPill(r.pct, r.status)}</td>
-                </tr>
-              ))}
+              {flowModRows.map(({ flow, rows }) => {
+                const isActive    = flow.id === activeFlow.id;
+                const isCollapsed = collapsedFlows.has(flow.id);
+                const flowBlids   = [...new Set(rows.flatMap(r => r.blids))];
+                const flowPassed  = flowBlids.filter(b => rows.some(r => r.blids.includes(b) && r.passed.includes(b)));
+                const flowPct     = flowBlids.length ? Math.round(flowPassed.length / flowBlids.length * 100) : 0;
+
+                return (
+                  <>
+                    {/* Flow sub-header row — only shown in group mode */}
+                    {isGrouped && (
+                      <tr
+                        key={`hdr-${flow.id}`}
+                        style={{ cursor: 'pointer', background: isActive ? 'rgba(29,78,216,.04)' : 'var(--hover)' }}
+                        onClick={() => toggleFlow(flow.id)}
+                      >
+                        <td colSpan={5} style={{ padding: '8px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ChevronIcon collapsed={isCollapsed} />
+                            <span style={{ fontSize: 12, fontWeight: 700, color: isActive ? 'var(--blue-2)' : 'var(--ink)' }}>
+                              {flow.name}
+                            </span>
+                            {isActive && (
+                              <span style={{ fontSize: 10, background: 'var(--blue-soft)', color: 'var(--blue-2)', border: '1px solid var(--blue-line)', borderRadius: 99, padding: '1px 7px', fontWeight: 600 }}>
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                          <span style={{ color: 'var(--ink-3)' }}>{flowBlids.length} BLIDs</span>
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: flowPct === 100 ? 'var(--ok)' : flowPct > 50 ? 'var(--warn)' : 'var(--bad)' }}>
+                            {flowPct}%
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Module rows */}
+                    {!isCollapsed && rows.map(r => (
+                      <tr key={r.mod.id} style={{ background: isGrouped && isActive ? 'rgba(29,78,216,.015)' : undefined }}>
+                        <td>
+                          <div className="tbl-mod-cell" style={{ paddingLeft: isGrouped ? 20 : 0 }}>
+                            <span className="tbl-mod-main">{r.mod.label}: {r.mod.name}</span>
+                            <span className="tbl-mod-sub">{r.mod.side} System</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: r.mod.created_by === user?.userId ? 'var(--blue-2)' : 'var(--ink-3)' }}>
+                            {r.mod.created_by === user?.userId ? 'You' : (r.mod.created_by_name ?? '—')}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {r.blids.map(b => (
+                              <span key={b} className="blid-link" style={{ display: 'inline-block', width: 'fit-content' }}>{b}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{r.passed.length}</td>
+                        <td>
+                          <div className="cov-row">
+                            <div className="cov-track">
+                              <div className="cov-fill" style={{ width: `${r.pct}%` }} />
+                            </div>
+                            <span className="cov-pct">{r.pct}%</span>
+                          </div>
+                        </td>
+                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--ink-3)' }}>
+                          <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{r.ms.pass}P</span>{' '}
+                          <span style={{ color: 'var(--bad)', fontWeight: 600 }}>{r.ms.fail}F</span>{' '}
+                          <span style={{ fontWeight: 500 }}>{r.ms.untested}U</span>
+                        </td>
+                        <td>{getStatusPill(r.pct, r.status)}</td>
+                      </tr>
+                    ))}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Failing BLIDs (shown inline when failures exist) */}
+      {/* Failing BLIDs */}
       {failingBLIDs.length > 0 && (
         <div className="section" style={{ borderColor: 'var(--bad-line)' }}>
           <div className="section-head">
@@ -269,6 +363,7 @@ export function BLIDDashboard() {
               <div key={fb.blid} className="fail-blid-row">
                 <span className="blid">{fb.blid}</span>
                 <span className="fb-mod">{fb.mod}</span>
+                {isGrouped && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{fb.flowName}</span>}
                 <span className="fb-desc">{fb.desc}</span>
                 {fb.issue && <span className={`fb-issue issue-${fb.issue}`}>{fb.issue}</span>}
               </div>
@@ -280,9 +375,7 @@ export function BLIDDashboard() {
       {/* Success banner */}
       {allPass && !bannerDismissed && (
         <div className="banner">
-          <div className="banner-ico">
-            <CheckIcon size={16} />
-          </div>
+          <div className="banner-ico"><CheckIcon size={16} /></div>
           <div className="banner-body">
             <div className="banner-title">Precision Target Reached</div>
             <div className="banner-sub">No failing BLIDs — great work! All traced requirements are currently passing active validation cycles.</div>
@@ -297,11 +390,7 @@ export function BLIDDashboard() {
           <div className="trend-title">Historical Coverage Trend</div>
           <div className="trend-chart">
             {trendBars.map((h, i) => (
-              <div
-                key={i}
-                className={`trend-bar ${i >= 4 ? 'solid' : 'muted'}`}
-                style={{ height: `${Math.max(4, h)}%` }}
-              />
+              <div key={i} className={`trend-bar ${i >= 4 ? 'solid' : 'muted'}`} style={{ height: `${Math.max(4, h)}%` }} />
             ))}
           </div>
         </div>
@@ -325,19 +414,19 @@ export function BLIDDashboard() {
           </div>
           <div className="health-row">
             <span className="hk">Sync State</span>
-            <span className={`hv ${syncStatus}`}>
-              {syncStatus === 'active' ? 'ACTIVE' : 'IDLE'}
-            </span>
+            <span className={`hv ${syncStatus}`}>{syncStatus === 'active' ? 'ACTIVE' : 'IDLE'}</span>
           </div>
           <div className="health-row">
-            <span className="hk">Coverage</span>
-            <span className={`hv ${st.blidPct === 100 ? 'pass' : st.blidPct > 50 ? 'warn' : 'fail'}`}>
-              {st.blidPct}%
+            <span className="hk">Coverage {isGrouped && <span style={{ fontSize: 9, opacity: .7, fontWeight: 400 }}>(group)</span>}</span>
+            <span className={`hv ${coveragePct === 100 ? 'pass' : coveragePct > 50 ? 'warn' : 'fail'}`}>
+              {coveragePct}%
             </span>
           </div>
-          <button className="health-btn">Full Diagnostics</button>
+          <button className="health-btn" onClick={() => setShowDiag(true)}>Full Diagnostics</button>
         </div>
       </div>
+
+      {showDiag && <DiagnosticsModal flow={activeFlow} onClose={() => setShowDiag(false)} />}
     </div>
   );
 }
