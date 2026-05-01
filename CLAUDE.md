@@ -90,6 +90,7 @@ All defined inline in `server/src/index.ts`. All routes except auth require `Aut
 | GET | `/api/auth/me` | Verify token → current user |
 | GET | `/api/flows` | Full nested tree (flows + modules + scenarios + steps) |
 | POST | `/api/flows` | Create flow |
+| PUT | `/api/flows/:id` | Update flow name/description/group (owner only) |
 | DELETE | `/api/flows/:id` | Delete flow (owner only, cascade) |
 | POST | `/api/flows/:flowId/modules` | Add module (flow owner only) |
 | PUT | `/api/modules/:id` | Update module fields or `order_idx` (flow owner only) |
@@ -113,8 +114,11 @@ All defined inline in `server/src/index.ts`. All routes except auth require `Aut
 | `BLIDDashboard.tsx` | BLID coverage metrics aggregated across the active flow |
 | `DiagnosticsModal.tsx` | Runs `runDiagnostics()` against the active flow; surfaces errors/warnings (missing steps, untested steps, duplicate BLIDs, failed steps without issue type) |
 | `LoginPage.tsx` | Login/register form, shown when `useAuth().user` is null |
+| `ConfirmModal.tsx` | Generic confirmation dialog used for destructive actions |
 
-`App.tsx` contains `AddModuleModal` with a `QUICK` array of 8 hardcoded module templates (label/name/side) for rapid creation, plus an inline SVG sprite (`<defs>`) for icons via `<use href="#i-*">`.
+`App.tsx` contains `AddModuleModal` with a `QUICK` array of 15 hardcoded module templates (label/name/side) for rapid creation, plus an inline SVG sprite (`<defs>`) for icons via `<use href="#i-*">`.
+
+`client/src/_backup/` holds snapshot copies of major components — ignore when making changes.
 
 ### Business Logic (`utils.ts`)
 
@@ -126,6 +130,10 @@ All defined inline in `server/src/index.ts`. All routes except auth require `Aut
 - `isGated(flow, modIdx)`: returns `true` if any earlier module has a blocker step.
 - `STATUS_META`: maps each `ModuleStatus` to `{ label, cls }` — CSS classes prefixed `st-` (e.g. `st-blocked`).
 - `today()`: returns `"DD-Mon-YYYY"` (e.g. `"25-Apr-2026"`), auto-filled on first pass/fail.
+
+### Evidence Image Helpers (`diagnosticsHelpers.ts`)
+
+`evidence_image` on a test step is stored as either a bare URL string (legacy) or a JSON array of URLs. `parseImages(raw)` normalises either format to `string[]`; `serializeImages(urls)` writes back to JSON. Always go through these helpers when reading or writing evidence images.
 
 ### Export (`exportReport.ts`)
 

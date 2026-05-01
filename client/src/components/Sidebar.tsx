@@ -321,7 +321,7 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* Create form */}
+      {/* Create form — pinned above footer */}
       {showForm ? (
         <form className="sb-form" onSubmit={handleCreate}>
           <input
@@ -386,8 +386,6 @@ export function Sidebar() {
           + New Flow
         </button>
       )}
-
-      <div className="side-spacer" />
 
       {/* Footer */}
       <div className="side-foot">
