@@ -251,13 +251,8 @@ function StepCard({
     upd(d);
   };
 
-  const handleAddImg = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Max 10MB");
-      return;
-    }
+  const uploadFile = async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) { alert("Max 10MB"); return; }
     setUploading(true);
     try {
       const url = await uploadImage(file);
@@ -268,6 +263,22 @@ function StepCard({
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  };
+
+  const handleAddImg = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await uploadFile(file);
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const imageItem = Array.from(e.clipboardData.items).find((item) =>
+      item.type.startsWith("image/")
+    );
+    if (!imageItem) return;
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    await uploadFile(file);
   };
 
   const handleRemoveImg = async (idx: number) => {
@@ -336,197 +347,224 @@ function StepCard({
 
       {/* ── Body ── */}
       {!collapsed && (
-        <div className="step-body">
+        <div className="step-body" onPaste={canEdit ? handlePaste : undefined}>
           {/* Expected result */}
-          <textarea
-            className="step-textarea"
-            ref={fit}
-            rows={2}
-            defaultValue={step.expected}
-            placeholder="Expected result…"
-            readOnly={!canEdit}
-            onInput={(e) => fit(e.currentTarget)}
-            onBlur={
-              canEdit ? (e) => upd({ expected: e.target.value }) : undefined
-            }
-          />
-
-          {/* Status + Issue type */}
-          <div className="step-status-row">
-            {canEdit ? (
-              <>
-                <button
-                  className={`ep-st-btn ${step.status === "pass" ? "ep-pass" : ""}`}
-                  onClick={() => mark("pass")}
-                >
-                  ✓ Pass
-                </button>
-                <button
-                  className={`ep-st-btn ${step.status === "fail" ? "ep-fail" : ""}`}
-                  onClick={() => mark("fail")}
-                >
-                  ✗ Fail
-                </button>
-                <button
-                  className={`ep-st-btn ${step.status === "untested" ? "ep-nt" : ""}`}
-                  onClick={() => mark("untested")}
-                >
-                  Reset
-                </button>
-              </>
-            ) : (
-              <span
-                className={`sst-pill ${step.status === "pass" ? "sst-pill-pass" : step.status === "fail" ? "sst-pill-fail" : "sst-pill-nt"}`}
-              >
-                {step.status === "pass"
-                  ? "✓ PASS"
-                  : step.status === "fail"
-                    ? "✗ FAIL"
-                    : "— N/T"}
-              </span>
-            )}
-            {step.status === "fail" &&
-              (() => {
-                const needsIssue = !step.issue_type;
-                return (
-                  <div
-                    className={`step-issue-row ${needsIssue ? "step-issue-row--required" : ""}`}
-                  >
-                    {needsIssue && (
-                      <span className="step-issue-required">
-                        Issue type required !
-                      </span>
-                    )}
-                    <button
-                      className={`ep-issue-btn ep-blocker ${step.issue_type === "blocker" ? "on" : ""}`}
-                      onClick={() =>
-                        canEdit &&
-                        upd({
-                          issue_type:
-                            step.issue_type === "blocker" ? null : "blocker",
-                        })
-                      }
-                    >
-                      Blocker
-                    </button>
-                    <button
-                      className={`ep-issue-btn ep-major   ${step.issue_type === "major" ? "on" : ""}`}
-                      onClick={() =>
-                        canEdit &&
-                        upd({
-                          issue_type:
-                            step.issue_type === "major" ? null : "major",
-                        })
-                      }
-                    >
-                      Major
-                    </button>
-                    <button
-                      className={`ep-issue-btn ep-minor   ${step.issue_type === "minor" ? "on" : ""}`}
-                      onClick={() =>
-                        canEdit &&
-                        upd({
-                          issue_type:
-                            step.issue_type === "minor" ? null : "minor",
-                        })
-                      }
-                    >
-                      Minor
-                    </button>
-                  </div>
-                );
-              })()}
+          <div className="step-section">
+            <span className="step-section-label">Expected Result</span>
+            <textarea
+              className="step-textarea"
+              ref={fit}
+              rows={2}
+              defaultValue={step.expected}
+              placeholder="Describe what should happen…"
+              readOnly={!canEdit}
+              onInput={(e) => fit(e.currentTarget)}
+              onBlur={
+                canEdit ? (e) => upd({ expected: e.target.value }) : undefined
+              }
+            />
           </div>
 
-          {/* Meta + screenshots + remarks — only when tested */}
+          {/* Status + Issue type */}
+          <div className="step-section">
+            <span className="step-section-label">Test Result</span>
+            <div className="step-status-row">
+              {canEdit ? (
+                <>
+                  <button
+                    className={`ep-st-btn ${step.status === "pass" ? "ep-pass" : ""}`}
+                    onClick={() => mark("pass")}
+                  >
+                    ✓ Pass
+                  </button>
+                  <button
+                    className={`ep-st-btn ${step.status === "fail" ? "ep-fail" : ""}`}
+                    onClick={() => mark("fail")}
+                  >
+                    ✗ Fail
+                  </button>
+                  <button
+                    className={`ep-st-btn ${step.status === "untested" ? "ep-nt" : ""}`}
+                    onClick={() => mark("untested")}
+                  >
+                    Reset
+                  </button>
+                </>
+              ) : (
+                <span
+                  className={`sst-pill ${step.status === "pass" ? "sst-pill-pass" : step.status === "fail" ? "sst-pill-fail" : "sst-pill-nt"}`}
+                >
+                  {step.status === "pass"
+                    ? "✓ PASS"
+                    : step.status === "fail"
+                      ? "✗ FAIL"
+                      : "— N/T"}
+                </span>
+              )}
+              {step.status === "fail" &&
+                (() => {
+                  const needsIssue = !step.issue_type;
+                  return (
+                    <div
+                      className={`step-issue-row ${needsIssue ? "step-issue-row--required" : ""}`}
+                    >
+                      {needsIssue && (
+                        <span className="step-issue-required">
+                          Issue type required!
+                        </span>
+                      )}
+                      <button
+                        className={`ep-issue-btn ep-blocker ${step.issue_type === "blocker" ? "on" : ""}`}
+                        onClick={() =>
+                          canEdit &&
+                          upd({
+                            issue_type:
+                              step.issue_type === "blocker" ? null : "blocker",
+                          })
+                        }
+                      >
+                        Blocker
+                      </button>
+                      <button
+                        className={`ep-issue-btn ep-major ${step.issue_type === "major" ? "on" : ""}`}
+                        onClick={() =>
+                          canEdit &&
+                          upd({
+                            issue_type:
+                              step.issue_type === "major" ? null : "major",
+                          })
+                        }
+                      >
+                        Major
+                      </button>
+                      <button
+                        className={`ep-issue-btn ep-minor ${step.issue_type === "minor" ? "on" : ""}`}
+                        onClick={() =>
+                          canEdit &&
+                          upd({
+                            issue_type:
+                              step.issue_type === "minor" ? null : "minor",
+                          })
+                        }
+                      >
+                        Minor
+                      </button>
+                    </div>
+                  );
+                })()}
+            </div>
+          </div>
+
+          {/* Evidence — only when tested */}
           {step.status !== "untested" && (
             <>
-              {/* Compact meta row */}
-              <div className="step-meta-row">
-                <input
-                  className="step-meta-inp"
-                  defaultValue={step.date_tested}
-                  placeholder="Date tested"
+              {/* Meta fields */}
+              <div className="step-section">
+                <span className="step-section-label">Evidence Details</span>
+                <div className="step-meta-row">
+                  <input
+                    className="step-meta-inp"
+                    defaultValue={step.date_tested}
+                    placeholder="Date tested"
+                    readOnly={!canEdit}
+                    onBlur={
+                      canEdit
+                        ? (e) => upd({ date_tested: e.target.value })
+                        : undefined
+                    }
+                  />
+                  <input
+                    className="step-meta-inp"
+                    defaultValue={step.ado_ticket}
+                    placeholder="ADO ticket #"
+                    readOnly={!canEdit}
+                    onBlur={
+                      canEdit
+                        ? (e) => upd({ ado_ticket: e.target.value })
+                        : undefined
+                    }
+                  />
+                  <input
+                    className="step-meta-inp step-meta-url"
+                    defaultValue={step.evidence_url}
+                    placeholder="Evidence URL"
+                    readOnly={!canEdit}
+                    type="url"
+                    onBlur={
+                      canEdit
+                        ? (e) => upd({ evidence_url: e.target.value })
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div className="step-section">
+                <span className="step-section-label">Remarks / Actual Result</span>
+                <textarea
+                  className="step-textarea"
+                  ref={fit}
+                  rows={2}
+                  defaultValue={step.remarks}
+                  placeholder="Describe the actual outcome…"
                   readOnly={!canEdit}
+                  onInput={(e) => fit(e.currentTarget)}
                   onBlur={
                     canEdit
-                      ? (e) => upd({ date_tested: e.target.value })
-                      : undefined
-                  }
-                />
-                <input
-                  className="step-meta-inp"
-                  defaultValue={step.ado_ticket}
-                  placeholder="#ADO ticket"
-                  readOnly={!canEdit}
-                  onBlur={
-                    canEdit
-                      ? (e) => upd({ ado_ticket: e.target.value })
-                      : undefined
-                  }
-                />
-                <input
-                  className="step-meta-inp step-meta-url"
-                  defaultValue={step.evidence_url}
-                  placeholder="Evidence URL"
-                  readOnly={!canEdit}
-                  type="url"
-                  onBlur={
-                    canEdit
-                      ? (e) => upd({ evidence_url: e.target.value })
+                      ? (e) => upd({ remarks: e.target.value })
                       : undefined
                   }
                 />
               </div>
 
-              {/* Remarks */}
-              <textarea
-                className="step-textarea"
-                ref={fit}
-                rows={2}
-                defaultValue={step.remarks}
-                placeholder="Remarks / actual result…"
-                readOnly={!canEdit}
-                onInput={(e) => fit(e.currentTarget)}
-                onBlur={
-                  canEdit ? (e) => upd({ remarks: e.target.value }) : undefined
-                }
-              />
-
               {/* Screenshots */}
-              <div className="step-photos">
-                {images.map((url, idx) => (
-                  <div key={idx} className="step-photo-thumb">
-                    <img
-                      src={url}
-                      alt={`screenshot ${idx + 1}`}
-                      onClick={() => window.open(url)}
-                    />
-                    {canEdit && (
-                      <button
-                        className="step-photo-del"
-                        onClick={() => handleRemoveImg(idx)}
+              <div className="step-section">
+                <span className="step-section-label">Screenshots</span>
+                <div className="step-photos">
+                  {images.map((url, idx) => (
+                    <div key={idx} className="step-photo-thumb">
+                      <img
+                        src={url}
+                        alt={`screenshot ${idx + 1}`}
+                        onClick={() => window.open(url)}
+                      />
+                      {canEdit && (
+                        <button
+                          className="step-photo-del"
+                          onClick={() => handleRemoveImg(idx)}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {canEdit && (
+                    <>
+                      <label
+                        className={`step-photo-add ${uploading ? "step-photo-add--loading" : ""}`}
+                        title={uploading ? "Uploading…" : "Browse file"}
                       >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {canEdit && (
-                  <label
-                    className={`step-photo-add ${uploading ? "step-photo-add--loading" : ""}`}
-                    title={uploading ? "Uploading…" : "Add screenshot"}
-                  >
-                    <span>{uploading ? "…" : "+"}</span>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAddImg}
-                      style={{ display: "none" }}
-                    />
-                  </label>
-                )}
+                        <span>{uploading ? "…" : "+"}</span>
+                        <input
+                          ref={fileRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAddImg}
+                          style={{ display: "none" }}
+                        />
+                      </label>
+                      <div
+                        className={`step-paste-zone ${uploading ? "step-paste-zone--loading" : ""}`}
+                        tabIndex={0}
+                        onPaste={handlePaste}
+                        title="Click here then Ctrl+V to paste an image"
+                      >
+                        {uploading ? "Uploading…" : "Ctrl+V to paste"}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -668,12 +706,12 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   // Derive worst issue type from failed steps
   const issue = scenarioIssueType(sc);
 
-  // Pull latest tested step's metadata for the meta cell
+  // Last tested step for date; any step with a ticket for ADO
   const testedStep = [...sc.steps]
     .reverse()
     .find((s) => s.status !== "untested");
   const metaDate = testedStep?.date_tested || "";
-  const metaAdo = testedStep?.ado_ticket || "";
+  const metaAdos = [...new Set(sc.steps.map((s) => s.ado_ticket).filter(Boolean))] as string[];
 
   return (
     <>
@@ -685,11 +723,15 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
           <span className="blid">{sc.blid}</span>
         </td>
 
-        {/* Description + issue badge */}
+        {/* Description + issue badge + step counts */}
         <td>
           <div className="sc-desc">
             {sc.description}
-            {issue && <span className={`sc-issue ${issue}`}>{issue}</span>}
+            {issue && (
+              <span className={`sc-issue ${issue}`}>
+                {issue.toUpperCase()}
+              </span>
+            )}
           </div>
           {sc.steps.length > 0 && (
             <div className="step-count-badge">
@@ -713,40 +755,43 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
         <td style={{ textAlign: "center" }}>
           {derived === "pass" && (
             <span className="sst-pill sst-pill-pass">
-              <IcoCheck />
-              PASS
+              <IcoCheck /> PASS
             </span>
           )}
           {derived === "fail" && (
             <span className="sst-pill sst-pill-fail">
-              <IcoX />
-              FAIL
+              <IcoX /> FAIL
             </span>
           )}
           {derived === "untested" && (
             <span className="sst-pill sst-pill-nt">
-              <IcoDash />
-              N/T
+              <IcoDash /> N/T
             </span>
           )}
         </td>
 
-        {/* Meta (date + ADO) */}
+        {/* Date tested */}
         <td>
-          <div className="sc-meta">
-            {metaDate ? (
-              <span>{metaDate}</span>
-            ) : (
-              <span className="sc-meta-none">—</span>
-            )}
-            {metaAdo ? (
-              <span className="sc-meta-ado">
-                {metaAdo.startsWith("http") ? "🔗 link" : metaAdo}
-              </span>
-            ) : (
-              <span className="sc-meta-none">no ticket</span>
-            )}
-          </div>
+          {metaDate ? (
+            <span className="sc-meta-date">{metaDate}</span>
+          ) : (
+            <span className="sc-meta-none">—</span>
+          )}
+        </td>
+
+        {/* ADO ticket(s) */}
+        <td>
+          {metaAdos.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {metaAdos.map((ado) => (
+                <span key={ado} className="sc-meta-ado">
+                  {ado.startsWith("http") ? "🔗 link" : ado}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="sc-meta-none">—</span>
+          )}
         </td>
 
         {/* Expand chevron */}
@@ -762,7 +807,7 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
 
       {isExp && (
         <tr className="exp-row">
-          <td colSpan={5}>
+          <td colSpan={6}>
             <ExpandPanel sc={sc} canEdit={canEdit} />
           </td>
         </tr>
@@ -970,10 +1015,11 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
           <table className="sc-table">
             <thead>
               <tr>
-                <th style={{ width: 100 }}>BLID</th>
+                <th style={{ width: 90 }}>BLID</th>
                 <th>Scenario</th>
-                <th style={{ width: 90, textAlign: "center" }}>Status</th>
-                <th style={{ width: 120 }}>Tested · ADO</th>
+                <th style={{ width: 85, textAlign: "center" }}>Status</th>
+                <th style={{ width: 115 }}>Date Tested</th>
+                <th style={{ width: 120 }}>ADO Ticket</th>
                 <th style={{ width: 38 }} />
               </tr>
             </thead>

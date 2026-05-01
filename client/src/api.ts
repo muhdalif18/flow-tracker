@@ -7,23 +7,24 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function json(r: Response) {
-  if (r.status === 401) {
+function json(r: Response, isPublic = false) {
+  if (r.status === 401 && !isPublic) {
     localStorage.removeItem('ft_token');
     localStorage.removeItem('ft_userId');
     localStorage.removeItem('ft_username');
-    window.location.reload();
+    localStorage.removeItem('ft_role');
+    window.dispatchEvent(new Event('ft:logout'));
   }
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
 
-const post = (url: string, body: object) =>
+const post = (url: string, body: object, isPublic = false) =>
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(body),
-  }).then(json);
+  }).then(r => json(r, isPublic));
 
 const put = (url: string, body: object) =>
   fetch(url, {
@@ -35,12 +36,30 @@ const put = (url: string, body: object) =>
 const del = (url: string) =>
   fetch(url, { method: 'DELETE', headers: authHeader() }).then(json);
 
+const get = (url: string) =>
+  fetch(url, { headers: authHeader() }).then(json);
+
 export const api = {
   // Auth
-  login: (username: string, password: string): Promise<{ token: string; userId: string; username: string }> =>
-    post(`${BASE}/auth/login`, { username, password }),
-  register: (username: string, password: string): Promise<{ token: string; userId: string; username: string }> =>
-    post(`${BASE}/auth/register`, { username, password }),
+  login: (username: string, password: string): Promise<{ token: string; userId: string; username: string; role: string }> =>
+    post(`${BASE}/auth/login`, { username, password }, true),
+  forgotPassword: (email: string): Promise<{ ok: boolean }> =>
+    post(`${BASE}/auth/forgot-password`, { email }, true),
+  resetPassword: (token: string, newPassword: string): Promise<{ ok: boolean }> =>
+    post(`${BASE}/auth/reset-password`, { token, newPassword }, true),
+
+  // Admin
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
+    put(`${BASE}/auth/change-password`, { currentPassword, newPassword }),
+
+  adminGetUsers: (): Promise<{ id: string; username: string; role: string; created_at: string }[]> =>
+    get(`${BASE}/admin/users`),
+  adminCreateUser: (username: string, password: string): Promise<{ id: string; username: string; role: string }> =>
+    post(`${BASE}/admin/users`, { username, password }),
+  adminChangePassword: (id: string, newPassword: string): Promise<{ ok: boolean }> =>
+    put(`${BASE}/admin/users/${id}/password`, { newPassword }),
+  adminDeleteUser: (id: string, adminPassword: string): Promise<{ ok: boolean }> =>
+    put(`${BASE}/admin/users/${id}/delete`, { adminPassword }),
 
   // Flows
   getFlows:   (): Promise<Flow[]>  =>

@@ -1,5 +1,10 @@
 import 'dotenv/config';
-import express from 'express';
+
+// Prevent unhandled rejections from crashing the server
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+import express, { type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import multer from 'multer';
@@ -10,6 +15,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 import { signToken, requireAuth } from './auth';
 import type { AuthRequest } from './auth';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +62,10 @@ if (!USE_R2) {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── DB schema init ────────────────────────────────────────────────────────
+const ADMIN_USERNAME = 'SuperAdmin';
+const ADMIN_PASSWORD = 'Superbestpower00';
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL || 'labooonthewhale78@gmail.com';
+
 async function initDB() {
   const client = await pool.connect();
   try {
@@ -64,7 +74,19 @@ async function initDB() {
         id            TEXT PRIMARY KEY,
         username      TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        role          TEXT NOT NULL DEFAULT 'tester',
+        email         TEXT,
         created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role  TEXT NOT NULL DEFAULT 'tester'`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token      TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used       BOOLEAN NOT NULL DEFAULT false
       )
     `);
     await client.query(`
@@ -129,6 +151,18 @@ async function initDB() {
   } finally {
     client.release();
   }
+
+  // Seed SuperAdmin if not present
+  const { rows: admins } = await pool.query('SELECT id FROM users WHERE username = $1', [ADMIN_USERNAME]);
+  if (!admins.length) {
+    await pool.query(
+      'INSERT INTO users (id, username, password_hash, role, email) VALUES ($1,$2,$3,$4,$5)',
+      [uuidv4(), ADMIN_USERNAME, hashPassword(ADMIN_PASSWORD), 'admin', ADMIN_EMAIL]
+    );
+    console.log('  SuperAdmin account created');
+  } else {
+    await pool.query('UPDATE users SET role=$1, email=$2 WHERE username=$3', ['admin', ADMIN_EMAIL, ADMIN_USERNAME]);
+  }
 }
 
 // ── Password helpers ──────────────────────────────────────────────────────
@@ -148,9 +182,47 @@ function verifyPassword(password: string, stored: string): boolean {
   }
 }
 
+// ── Email helper ──────────────────────────────────────────────────────────
+function createMailer() {
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+}
+
+async function sendResetEmail(to: string, resetUrl: string) {
+  const mailer = createMailer();
+  if (!mailer) throw new Error('EMAIL_NOT_CONFIGURED');
+  await mailer.sendMail({
+    from: `"Flow Tracker" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: 'Flow Tracker — Password Reset',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 8px;font-size:20px">Reset your password</h2>
+        <p style="color:#555;margin:0 0 24px">Click the button below to set a new password. This link expires in <strong>1 hour</strong>.</p>
+        <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:#1d4ed8;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
+          Reset Password
+        </a>
+        <p style="color:#999;font-size:12px;margin-top:24px">If you didn't request this, ignore this email. Your password won't change.</p>
+        <p style="color:#bbb;font-size:11px;margin-top:4px">Link: ${resetUrl}</p>
+      </div>
+    `,
+  });
+}
+
 // ── Ownership helper ──────────────────────────────────────────────────────
-function canEdit(owner: string | null | undefined, userId: string): boolean {
+function canEdit(owner: string | null | undefined, userId: string, role = 'tester'): boolean {
+  if (role === 'admin') return true;
   return !owner || owner === userId;
+}
+
+function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
 }
 
 // ── Storage helpers ───────────────────────────────────────────────────────
@@ -233,7 +305,107 @@ async function getFlowOwnerByStep(stepId: string): Promise<string | null> {
 }
 
 // ── Auth routes (public) ──────────────────────────────────────────────────
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body as { username?: string; password?: string };
+  if (!username?.trim() || !password)
+    return res.status(400).json({ error: 'Username and password required' });
+
+  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username.trim()]);
+  const user = rows[0];
+  if (!user || !verifyPassword(password, user.password_hash))
+    return res.status(401).json({ error: 'Invalid username or password' });
+
+  res.json({
+    token: signToken(user.id, user.username, user.role || 'tester'),
+    userId: user.id,
+    username: user.username,
+    role: user.role || 'tester',
+  });
+});
+
+// Step 1 — request reset: user provides email, server checks if it matches admin
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS)
+      return res.status(503).json({ error: 'Email not configured on server. Set EMAIL_USER and EMAIL_PASS env vars.' });
+
+    const { email } = req.body as { email?: string };
+    if (!email?.trim()) return res.status(400).json({ error: 'Email is required.' });
+
+    const { rows } = await pool.query(
+      "SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND role = 'admin'",
+      [email.trim()]
+    );
+    if (!rows.length)
+      return res.status(404).json({ error: 'No admin account found with that email. Contact your administrator.' });
+
+    const admin = rows[0];
+
+    const token = randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await pool.query(
+      'INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ($1,$2,$3)',
+      [token, admin.id, expires]
+    );
+
+    const origin = process.env.APP_URL || `http://localhost:5173`;
+    const resetUrl = `${origin}/?reset_token=${token}`;
+
+    await sendResetEmail(admin.email, resetUrl);
+    res.json({ ok: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[forgot-password] error:', msg);
+    if (msg === 'EMAIL_NOT_CONFIGURED')
+      return res.status(503).json({ error: 'Email not configured on server. Set EMAIL_USER and EMAIL_PASS env vars.' });
+    if (msg.includes('Invalid login') || msg.includes('Username and Password') || msg.includes('535'))
+      return res.status(503).json({ error: 'Gmail login failed. Make sure EMAIL_PASS is a Gmail App Password (16 chars), not your regular password.' });
+    res.status(500).json({ error: 'Failed to send email: ' + msg });
+  }
+});
+
+// Step 2 — submit new password using token
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body as { token?: string; newPassword?: string };
+  if (!token || !newPassword)
+    return res.status(400).json({ error: 'Token and new password required' });
+  if (newPassword.length < 6)
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  const { rows } = await pool.query(
+    'SELECT * FROM password_reset_tokens WHERE token = $1',
+    [token]
+  );
+  if (!rows.length) return res.status(400).json({ error: 'Invalid or expired reset link' });
+  const t = rows[0];
+  if (t.used)                          return res.status(400).json({ error: 'This reset link has already been used' });
+  if (new Date(t.expires_at) < new Date()) return res.status(400).json({ error: 'Reset link has expired. Request a new one.' });
+
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(newPassword), t.user_id]);
+  await pool.query('UPDATE password_reset_tokens SET used = true WHERE token = $1', [token]);
+  res.json({ ok: true });
+});
+
+// ── Global auth middleware ────────────────────────────────────────────────
+app.use('/api', (req: AuthRequest, res, next) => {
+  const pub = ['/auth/login', '/auth/forgot-password', '/auth/reset-password'];
+  if (pub.includes(req.path)) return next();
+  return requireAuth(req, res, next);
+});
+
+app.get('/api/auth/me', (req: AuthRequest, res) => {
+  res.json({ userId: req.user!.userId, username: req.user!.username, role: req.user!.role });
+});
+
+// ── Admin: user management ────────────────────────────────────────────────
+app.get('/api/admin/users', requireAdmin, async (_req, res) => {
+  const { rows } = await pool.query(
+    "SELECT id, username, role, email, created_at FROM users ORDER BY created_at"
+  );
+  res.json(rows);
+});
+
+app.post('/api/admin/users', requireAdmin, async (req, res) => {
   const { username, password } = req.body as { username?: string; password?: string };
   if (!username?.trim() || !password)
     return res.status(400).json({ error: 'Username and password required' });
@@ -246,33 +418,58 @@ app.post('/api/auth/register', async (req, res) => {
   if (rows.length) return res.status(409).json({ error: 'Username already taken' });
 
   const id = uuidv4();
-  await pool.query('INSERT INTO users (id, username, password_hash) VALUES ($1,$2,$3)',
-    [id, username.trim(), hashPassword(password)]);
-
-  res.json({ token: signToken(id, username.trim()), userId: id, username: username.trim() });
+  await pool.query(
+    "INSERT INTO users (id, username, password_hash, role) VALUES ($1,$2,$3,'tester')",
+    [id, username.trim(), hashPassword(password)]
+  );
+  res.json({ id, username: username.trim(), role: 'tester' });
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body as { username?: string; password?: string };
-  if (!username?.trim() || !password)
-    return res.status(400).json({ error: 'Username and password required' });
+// Admin resets a tester's password
+app.put('/api/admin/users/:id/password', requireAdmin, async (req, res) => {
+  const { newPassword } = req.body as { newPassword?: string };
+  if (!newPassword || newPassword.length < 4)
+    return res.status(400).json({ error: 'Password must be at least 4 characters' });
 
-  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username.trim()]);
-  const user = rows[0];
-  if (!user || !verifyPassword(password, user.password_hash))
-    return res.status(401).json({ error: 'Invalid username or password' });
+  const { rows } = await pool.query('SELECT id, role FROM users WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'User not found' });
 
-  res.json({ token: signToken(user.id, user.username), userId: user.id, username: user.username });
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(newPassword), req.params.id]);
+  res.json({ ok: true });
 });
 
-// ── Global auth middleware ────────────────────────────────────────────────
-app.use('/api', (req: AuthRequest, res, next) => {
-  if (req.path === '/auth/login' || req.path === '/auth/register') return next();
-  return requireAuth(req, res, next);
+// User changes their own password
+app.put('/api/auth/change-password', async (req: AuthRequest, res) => {
+  const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+  if (!currentPassword || !newPassword)
+    return res.status(400).json({ error: 'Current and new password required' });
+  if (newPassword.length < 4)
+    return res.status(400).json({ error: 'New password must be at least 4 characters' });
+
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user!.userId]);
+  if (!rows.length) return res.status(404).json({ error: 'User not found' });
+  if (!verifyPassword(currentPassword, rows[0].password_hash))
+    return res.status(401).json({ error: 'Current password is incorrect' });
+
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(newPassword), req.user!.userId]);
+  res.json({ ok: true });
 });
 
-app.get('/api/auth/me', (req: AuthRequest, res) => {
-  res.json({ userId: req.user!.userId, username: req.user!.username });
+app.put('/api/admin/users/:id/delete', requireAdmin, async (req: AuthRequest, res) => {
+  const { adminPassword } = req.body as { adminPassword?: string };
+  if (!adminPassword) return res.status(400).json({ error: 'Admin password required' });
+
+  // Verify admin's own password
+  const { rows: adminRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user!.userId]);
+  if (!adminRows.length || !verifyPassword(adminPassword, adminRows[0].password_hash))
+    return res.status(403).json({ error: 'Incorrect admin password' });
+
+  const { rows } = await pool.query('SELECT id, role FROM users WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'User not found' });
+  if (rows[0].role === 'admin') return res.status(403).json({ error: 'Cannot delete admin account' });
+
+  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
 });
 
 // ── Flows ─────────────────────────────────────────────────────────────────
@@ -297,7 +494,7 @@ app.post('/api/flows', async (req: AuthRequest, res) => {
 app.put('/api/flows/:id', async (req: AuthRequest, res) => {
   const { rows } = await pool.query('SELECT created_by FROM flows WHERE id = $1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
-  if (!canEdit(rows[0].created_by, req.user!.userId))
+  if (!canEdit(rows[0].created_by, req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only edit your own flows' });
   const body = req.body as { name?: string; group_name?: string };
   if (body.name !== undefined && !body.name.trim()) return res.status(400).json({ error: 'name cannot be empty' });
@@ -314,7 +511,7 @@ app.put('/api/flows/:id', async (req: AuthRequest, res) => {
 app.delete('/api/flows/:id', async (req: AuthRequest, res) => {
   const { rows } = await pool.query('SELECT created_by FROM flows WHERE id = $1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
-  if (!canEdit(rows[0].created_by, req.user!.userId))
+  if (!canEdit(rows[0].created_by, req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only delete your own flows' });
   await pool.query('DELETE FROM flows WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
@@ -322,7 +519,7 @@ app.delete('/api/flows/:id', async (req: AuthRequest, res) => {
 
 // ── Modules ───────────────────────────────────────────────────────────────
 app.post('/api/flows/:flowId/modules', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwner(req.params.flowId), req.user!.userId))
+  if (!canEdit(await getFlowOwner(req.params.flowId), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only add modules to your own flows' });
   const { label, name, side = 'eDS', note = '', parallel_group = null } = req.body;
   if (!label?.trim() || !name?.trim()) return res.status(400).json({ error: 'label and name required' });
@@ -342,7 +539,7 @@ app.post('/api/flows/:flowId/modules', async (req: AuthRequest, res) => {
 app.put('/api/modules/:id', async (req: AuthRequest, res) => {
   const { rows: mRows } = await pool.query('SELECT * FROM modules WHERE id = $1', [req.params.id]);
   if (!mRows.length) return res.status(404).json({ error: 'Not found' });
-  if (!canEdit(await getFlowOwnerByModule(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByModule(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only edit modules in your own flows' });
   const { label, name, side, note, order_idx } = req.body;
   if (order_idx !== undefined)
@@ -362,7 +559,7 @@ app.put('/api/modules/:id', async (req: AuthRequest, res) => {
 app.delete('/api/modules/:id', async (req: AuthRequest, res) => {
   const { rows } = await pool.query('SELECT created_by FROM modules WHERE id = $1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
-  if (!canEdit(await getFlowOwnerByModule(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByModule(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only delete modules in your own flows' });
   await pool.query('DELETE FROM modules WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
@@ -370,7 +567,7 @@ app.delete('/api/modules/:id', async (req: AuthRequest, res) => {
 
 // ── Scenarios ─────────────────────────────────────────────────────────────
 app.post('/api/modules/:moduleId/scenarios', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByModule(req.params.moduleId), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByModule(req.params.moduleId), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only add scenarios to modules in your own flows' });
   const { blid, description } = req.body;
   if (!blid?.trim() || !description?.trim()) return res.status(400).json({ error: 'blid and description required' });
@@ -385,7 +582,7 @@ app.post('/api/modules/:moduleId/scenarios', async (req: AuthRequest, res) => {
 });
 
 app.put('/api/scenarios/:id', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByScenario(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByScenario(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only edit scenarios in your own flows' });
   const allowed = ['status','issue_type','date_tested','ado_ticket','evidence_url','evidence_image','remarks'] as const;
   const updates = Object.entries(req.body).filter(([k]) => (allowed as readonly string[]).includes(k));
@@ -399,7 +596,7 @@ app.put('/api/scenarios/:id', async (req: AuthRequest, res) => {
 });
 
 app.delete('/api/scenarios/:id', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByScenario(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByScenario(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only delete scenarios from your own flows' });
   const { rows } = await pool.query('SELECT evidence_image FROM scenarios WHERE id = $1', [req.params.id]);
   await deleteEvidence(rows[0]?.evidence_image);
@@ -409,7 +606,7 @@ app.delete('/api/scenarios/:id', async (req: AuthRequest, res) => {
 
 // ── Test Steps ────────────────────────────────────────────────────────────
 app.post('/api/scenarios/:scenarioId/steps', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByScenario(req.params.scenarioId), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByScenario(req.params.scenarioId), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only add steps to scenarios in your own flows' });
   const { description, expected = '' } = req.body;
   if (!description?.trim()) return res.status(400).json({ error: 'description required' });
@@ -424,7 +621,7 @@ app.post('/api/scenarios/:scenarioId/steps', async (req: AuthRequest, res) => {
 });
 
 app.put('/api/steps/:id', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByStep(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByStep(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only edit steps in your own flows' });
   const allowed = ['description','expected','status','issue_type','date_tested','ado_ticket','evidence_url','evidence_image','remarks'] as const;
   const updates = Object.entries(req.body).filter(([k]) => (allowed as readonly string[]).includes(k));
@@ -438,7 +635,7 @@ app.put('/api/steps/:id', async (req: AuthRequest, res) => {
 });
 
 app.delete('/api/steps/:id', async (req: AuthRequest, res) => {
-  if (!canEdit(await getFlowOwnerByStep(req.params.id), req.user!.userId))
+  if (!canEdit(await getFlowOwnerByStep(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only delete steps in your own flows' });
   const { rows } = await pool.query('SELECT evidence_image FROM test_steps WHERE id = $1', [req.params.id]);
   await deleteEvidence(rows[0]?.evidence_image);
@@ -449,7 +646,7 @@ app.delete('/api/steps/:id', async (req: AuthRequest, res) => {
 // ── Module reorder ────────────────────────────────────────────────────────
 app.put('/api/flows/:flowId/modules/reorder', async (req: AuthRequest, res) => {
   const { moduleId, direction } = req.body as { moduleId: string; direction: -1 | 1 };
-  if (!canEdit(await getFlowOwner(req.params.flowId), req.user!.userId))
+  if (!canEdit(await getFlowOwner(req.params.flowId), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only reorder modules in your own flows' });
   const { rows: mods } = await pool.query(
     'SELECT * FROM modules WHERE flow_id = $1 ORDER BY order_idx', [req.params.flowId]);

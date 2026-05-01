@@ -974,35 +974,41 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 }
 .step-desc-inp::placeholder { color: var(--ink-4); }
 
-.step-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.step-body { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+/* Section label inside step body */
+.step-section { display: flex; flex-direction: column; gap: 6px; }
+.step-section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3);
+}
 
 /* ── Step textarea ───────────────────────────────────────────────────────── */
 .step-textarea {
-  width: 100%; font-family: var(--sans); font-size: 12.5px; color: var(--ink);
+  width: 100%; font-family: var(--sans); font-size: 13px; color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm);
-  overflow: hidden; resize: none;
-  padding: 7px 10px; background: var(--bg); outline: none; resize: vertical;
-  transition: border-color var(--t); box-sizing: border-box;
+  padding: 9px 11px; background: var(--bg); outline: none; resize: vertical; min-height: 58px;
+  transition: border-color var(--t); box-sizing: border-box; line-height: 1.55;
 }
 .step-textarea::placeholder { color: var(--ink-4); }
 .step-textarea:focus { border-color: var(--blue-2); box-shadow: 0 0 0 3px rgba(29,78,216,.08); }
 .step-textarea[readonly] { background: var(--hover); }
 
 /* ── Step status + issue row ─────────────────────────────────────────────── */
-.step-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.step-issue-row  { display: flex; align-items: center; gap: 5px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--line); }
-.step-issue-row--required { background: rgba(220,38,38,.05); border: 1px dashed rgba(220,38,38,.4); border-radius: var(--r-sm); padding: 4px 8px; margin-left: 0; border-left: 1px dashed rgba(220,38,38,.4); }
+.step-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.step-issue-row  { display: flex; align-items: center; gap: 6px; margin-left: 6px; padding-left: 10px; border-left: 1px solid var(--line); }
+.step-issue-row--required { background: rgba(220,38,38,.05); border: 1px dashed rgba(220,38,38,.4); border-radius: var(--r-sm); padding: 5px 10px; margin-left: 0; border-left: 1px dashed rgba(220,38,38,.4); }
 .step-issue-required { font-size: 10px; font-weight: 600; color: var(--bad); margin-right: 4px; }
 
 /* ── Step meta row (date / ado / url) ────────────────────────────────────── */
-.step-meta-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.step-meta-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .step-meta-inp {
-  flex: 1; min-width: 100px; font-family: var(--sans); font-size: 12px; color: var(--ink);
+  flex: 1; min-width: 110px; font-family: var(--sans); font-size: 12.5px; color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm);
-  padding: 5px 9px; background: var(--bg); outline: none;
+  padding: 8px 11px; background: var(--bg); outline: none;
   transition: border-color var(--t);
 }
-.step-meta-url { flex: 2; min-width: 160px; }
+.step-meta-url { flex: 2; min-width: 180px; }
 .step-meta-inp:focus { border-color: var(--blue-2); }
 .step-meta-inp[readonly] { background: var(--hover); }
 
@@ -1031,6 +1037,17 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 }
 .step-photo-add:hover { border-color: var(--blue-2); color: var(--blue-2); background: var(--blue-soft); }
 .step-photo-add--loading { opacity: .6; pointer-events: none; }
+
+.step-paste-zone {
+  height: 60px; padding: 0 14px; border-radius: var(--r-sm); flex-shrink: 0;
+  border: 1.5px dashed var(--line); cursor: pointer; outline: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; color: var(--ink-3); font-family: var(--mono);
+  transition: all .15s; user-select: none; white-space: nowrap;
+}
+.step-paste-zone:hover,
+.step-paste-zone:focus { border-color: var(--blue-2); color: var(--blue-2); background: var(--blue-soft); }
+.step-paste-zone--loading { opacity: .6; pointer-events: none; }
 
 .step-count-badge {
   display: inline-block; margin-left: 8px;
@@ -1103,10 +1120,10 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .sc-add-btn:hover { background: var(--blue-2); color: #fff; border-color: var(--blue-2); }
 .sc-add-btn svg { width: 10px; height: 10px; }
 
-/* Meta cell (date + ADO) */
-.sc-meta { font-family: var(--mono); font-size: 11px; color: var(--ink-3); display: flex; flex-direction: column; gap: 2px; min-width: 110px; }
-.sc-meta-ado  { color: var(--blue-2); font-weight: 500; }
-.sc-meta-none { color: var(--ink-4); font-style: italic; }
+/* Meta cells (date / ADO — now separate columns) */
+.sc-meta-date { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+.sc-meta-ado  { font-family: var(--mono); font-size: 11.5px; color: var(--blue-2); font-weight: 600; }
+.sc-meta-none { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 
 /* Inline issue badge next to scenario description */
 .sc-issue { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: .04em; text-transform: uppercase; margin-left: 5px; font-family: var(--mono); vertical-align: middle; line-height: 1.6; }

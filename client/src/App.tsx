@@ -6,6 +6,8 @@ import { Sidebar } from "./components/Sidebar";
 import { FlowDiagram } from "./components/FlowDiagram";
 import { ScenariosView } from "./components/ScenariosView";
 import { BLIDDashboard } from "./components/BLIDDashboard";
+import { AdminPanel } from "./components/AdminPanel";
+import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { exportReport, exportExcel } from "./exportReport";
 
 const QUICK = [
@@ -326,9 +328,10 @@ function MainPanel({
   onToggleTheme: () => void;
 }) {
   const { activeFlow, state, setTab } = useApp();
-  const { isOwner } = useAuth();
-  const [showAddMod, setShowAddMod] = useState(false);
-  const [showExport, setShowExport] = useState(false);
+  const { isOwner, isAdmin } = useAuth();
+  const [showAddMod,   setShowAddMod]   = useState(false);
+  const [showExport,   setShowExport]   = useState(false);
+  const [showAdmin,    setShowAdmin]    = useState(false);
 
   if (state.loading) {
     return (
@@ -404,6 +407,16 @@ function MainPanel({
               <use href="#i-bell" />
             </svg>
           </button>
+          {isAdmin && (
+            <button
+              className="btn-sm"
+              style={{ background: 'rgba(29,78,216,.1)', color: 'var(--blue-2)', border: '1px solid rgba(29,78,216,.25)' }}
+              onClick={() => setShowAdmin(true)}
+              title="User management"
+            >
+              👥 Users
+            </button>
+          )}
           {activeFlow && isOwner(activeFlow.created_by) && (
             <button className="btn-sm" onClick={() => setShowAddMod(true)}>
               + Module
@@ -533,6 +546,7 @@ function MainPanel({
           onClose={() => setShowAddMod(false)}
         />
       )}
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </main>
   );
 }
@@ -545,6 +559,9 @@ function AuthGate({
   onToggleTheme: () => void;
 }) {
   const { user } = useAuth();
+
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token');
+  if (resetToken) return <ResetPasswordPage token={resetToken} />;
 
   if (!user) return <LoginPage />;
 

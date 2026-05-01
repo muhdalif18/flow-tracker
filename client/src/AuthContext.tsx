@@ -4,14 +4,15 @@ import { api } from './api';
 interface User {
   userId: string;
   username: string;
+  role: string;
 }
 
 interface AuthContextValue {
   user: User | null;
+  isAdmin: boolean;
   isOwner: (createdBy: string | null | undefined) => boolean;
-  login:    (username: string, password: string) => Promise<'ok' | 'wrong_credentials' | 'error'>;
-  register: (username: string, password: string) => Promise<'ok' | 'taken' | 'invalid' | 'error'>;
-  logout:   () => void;
+  login:  (username: string, password: string) => Promise<'ok' | 'wrong_credentials' | 'error'>;
+  logout: () => void;
 }
 
 const Ctx = createContext<AuthContextValue | null>(null);
@@ -20,10 +21,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     const userId   = localStorage.getItem('ft_userId');
     const username = localStorage.getItem('ft_username');
-    return userId && username ? { userId, username } : null;
+    const role     = localStorage.getItem('ft_role') || 'tester';
+    return userId && username ? { userId, username, role } : null;
   });
 
-  // Listen for forced logouts triggered by api.ts 401 handler
   useEffect(() => {
     const handler = () => setUser(null);
     window.addEventListener('ft:logout', handler);
@@ -36,7 +37,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('ft_token',    data.token);
       localStorage.setItem('ft_userId',   data.userId);
       localStorage.setItem('ft_username', data.username);
-      setUser({ userId: data.userId, username: data.username });
+      localStorage.setItem('ft_role',     data.role || 'tester');
+      setUser({ userId: data.userId, username: data.username, role: data.role || 'tester' });
       return 'ok';
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
@@ -44,34 +46,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const register = async (username: string, password: string): Promise<'ok' | 'taken' | 'invalid' | 'error'> => {
-    try {
-      const data = await api.register(username, password);
-      localStorage.setItem('ft_token',    data.token);
-      localStorage.setItem('ft_userId',   data.userId);
-      localStorage.setItem('ft_username', data.username);
-      setUser({ userId: data.userId, username: data.username });
-      return 'ok';
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('409')) return 'taken';
-      if (msg.includes('400')) return 'invalid';
-      return 'error';
-    }
-  };
-
   const logout = () => {
     localStorage.removeItem('ft_token');
     localStorage.removeItem('ft_userId');
     localStorage.removeItem('ft_username');
+    localStorage.removeItem('ft_role');
     setUser(null);
   };
 
+  const isAdmin = user?.role === 'admin';
+
+  // Admin can edit everything; others can only edit their own content
   const isOwner = (createdBy: string | null | undefined) =>
-    !createdBy || createdBy === user?.userId;
+    isAdmin || !createdBy || createdBy === user?.userId;
 
   return (
-    <Ctx.Provider value={{ user, isOwner, login, register, logout }}>
+    <Ctx.Provider value={{ user, isAdmin, isOwner, login, logout }}>
       {children}
     </Ctx.Provider>
   );

@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import { flowStats, modStatus } from "../utils";
 import type { Flow } from "../types";
 import { useConfirm } from "./ConfirmModal";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 
 function NavIcoDash() {
   return (
@@ -234,7 +235,8 @@ function GroupSection({ name, flows }: { name: string; flows: Flow[] }) {
 export function Sidebar() {
   const { state, setTab, createFlow } = useApp();
   const { user, logout } = useAuth();
-  const [showForm, setShowForm] = useState(false);
+  const [showForm,    setShowForm]    = useState(false);
+  const [showChgPw,   setShowChgPw]  = useState(false);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [groupMode, setGroupMode] = useState<
@@ -389,26 +391,12 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="side-foot">
-        <div
-          style={{
-            padding: "6px 12px 8px",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
+        <div style={{ padding: "6px 12px 8px", display: "flex", alignItems: "center", gap: 8 }}>
           <div
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 7,
-              background: "var(--blue-2)",
-              display: "grid",
-              placeItems: "center",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 12,
-              flexShrink: 0,
+              width: 28, height: 28, borderRadius: 7, background: "var(--blue-2)",
+              display: "grid", placeItems: "center", color: "#fff",
+              fontWeight: 700, fontSize: 12, flexShrink: 0,
             }}
           >
             {user?.username[0].toUpperCase()}
@@ -416,37 +404,38 @@ export function Sidebar() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--sidebar-ink)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                fontSize: 12, fontWeight: 600, color: "var(--sidebar-ink)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}
             >
               {user?.username}
             </div>
-            <div style={{ fontSize: 10, color: "var(--sidebar-muted)" }}>
-              Signed in
-            </div>
+            <button
+              onClick={() => setShowChgPw(true)}
+              style={{
+                background: "none", border: "none", padding: 0,
+                fontSize: 10, color: "var(--sidebar-muted)", cursor: "pointer",
+                fontFamily: "var(--sans)", textDecoration: "underline",
+              }}
+            >
+              Change password
+            </button>
           </div>
           <button
             onClick={logout}
             title="Sign out"
             style={{
-              background: "none",
-              border: "1px solid rgba(255,255,255,.15)",
-              borderRadius: 5,
-              color: "var(--sidebar-muted)",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "3px 7px",
+              background: "none", border: "1px solid rgba(255,255,255,.15)",
+              borderRadius: 5, color: "var(--sidebar-muted)",
+              cursor: "pointer", fontSize: 11, padding: "3px 7px",
             }}
           >
             Out
           </button>
         </div>
       </div>
+
+      {showChgPw && <ChangePasswordModal onClose={() => setShowChgPw(false)} />}
     </aside>
   );
 }
