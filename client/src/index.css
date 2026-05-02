@@ -1451,11 +1451,28 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .ov-mod-note { font-size: 10.5px; color: var(--ink-4); font-style: italic; }
 
 /* ── Report preview modal ───────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.36);
+  backdrop-filter: blur(2px);
+}
+
 .rp-modal {
-  background: var(--panel); border-radius: 14px; width: 480px; max-width: 95vw;
+  background: var(--panel);
+  border-radius: 14px;
+  width: min(620px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   box-shadow: 0 24px 60px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.1);
-  border: 1px solid var(--line); overflow: hidden;
-  display: flex; flex-direction: column;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .rp-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -1469,7 +1486,13 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   display: grid; place-items: center; transition: all .15s; flex-shrink: 0;
 }
 .rp-close:hover { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-line); }
-.rp-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 20px; }
+.rp-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
 .rp-field { display: flex; flex-direction: column; gap: 8px; }
 .rp-field-label {
   font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
@@ -1529,6 +1552,21 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .btn-primary:hover { background: #1e40af; }
 .btn-cancel { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--hover); color: var(--ink-2); font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--sans); transition: all .15s; }
 .btn-cancel:hover { background: var(--line-2); }
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+  .rp-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+    border-radius: 12px;
+  }
+  .rp-format-row {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* ── Overview group scope toggle ────────────────────────────────────────── */
 .ov-scope-bar {
