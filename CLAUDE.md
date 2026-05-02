@@ -22,6 +22,10 @@ cd server && npm run build
 
 # Build the client
 cd client && npm run build
+
+# TypeScript check (no emit)
+cd server && npx tsc --noEmit
+cd client && npx tsc --noEmit
 ```
 
 There are no test or lint commands configured.
@@ -31,25 +35,30 @@ There are no test or lint commands configured.
 Flow Tracker is a full-stack TypeScript monorepo: a React/Vite frontend (`client/`) proxied to an Express/PostgreSQL backend (`server/`). The two packages are wired together by a root `package.json` that runs them concurrently. In production the server also serves the compiled client from `client/dist/`.
 
 **Backend** (`server/src/index.ts`, port 3001):
-- PostgreSQL database via `pg` Pool, connection string from `DATABASE_URL` env var (Supabase in production). Schema is auto-created on startup via `initDB()`.
-- File uploads go to Cloudflare R2 when `R2_*` env vars are set; otherwise falls back to local `uploads/` directory. `USE_R2` boolean toggles the path at startup.
+- PostgreSQL via `pg` Pool; connection string from `DATABASE_URL` (Supabase in prod). Schema auto-created on startup via `initDB()`, which also runs `ALTER TABLE … ADD COLUMN IF NOT EXISTS` migrations and seeds the SuperAdmin account.
+- File uploads go to Cloudflare R2 when `R2_*` env vars are set; otherwise falls back to local `uploads/` directory. `USE_R2` boolean toggles at startup.
 - All API routes are defined inline in `index.ts` — no separate router files.
-- JWT auth via `server/src/auth.ts` (`signToken`, `requireAuth` middleware). Tokens last 30 days; secret from `JWT_SECRET` env var (defaults to a dev placeholder). Every API route except `/api/auth/login` and `/api/auth/register` requires a valid Bearer token.
+- JWT auth via `server/src/auth.ts` (`signToken`, `requireAuth` middleware). Tokens last 30 days, include `{ userId, username, role }`. Secret from `JWT_SECRET` env var. Every route except `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password` requires a valid Bearer token.
+- `unhandledRejection` is caught at the top of `index.ts` to prevent crashes from nodemailer or other async errors.
 
 **Frontend** (`client/src/`, port 5173):
 - Vite proxies `/api` and `/uploads` to `:3001` during development.
 - Global state in `AppContext.tsx` via React Context + `useReducer`. Components call `useApp()`.
-- Auth state in `AuthContext.tsx` via `useAuth()`. JWT stored in `localStorage` under `ft_token`/`ft_userId`/`ft_username`. A `ft:logout` custom event triggers forced logout on 401 responses from `api.ts`.
-- The API layer is a thin fetch wrapper in `api.ts`; all server communication goes through it.
+- Auth state in `AuthContext.tsx` via `useAuth()`. JWT stored in `localStorage` under `ft_token` / `ft_userId` / `ft_username` / `ft_role`. Dispatches `ft:logout` custom event on 401 to force logout — **401 in `api.ts` triggers this globally, so admin-action endpoints that verify password must return `403` (not `401`) for wrong password** to avoid kicking the admin out.
+- The API layer is a thin fetch wrapper in `api.ts`; all server communication goes through it. Public endpoints (login, forgot/reset password) pass `isPublic = true` to skip the 401 logout handler.
 
 ### Environment Variables
 
-Required for production; dev falls back to localhost/disk:
+All live in `server/.env`. Required for production; dev falls back to localhost/disk:
 
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string (Supabase) |
 | `JWT_SECRET` | JWT signing secret |
+| `ADMIN_EMAIL` | Email bound to the SuperAdmin account (used for password reset) |
+| `EMAIL_USER` | Gmail address used to send reset emails |
+| `EMAIL_PASS` | Gmail App Password (16-char, not regular password) |
+| `APP_URL` | Production base URL for reset links (e.g. `https://your-app.com`) |
 | `R2_ACCOUNT_ID` | Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | R2 secret key |
@@ -58,92 +67,118 @@ Required for production; dev falls back to localhost/disk:
 
 ### Data Model
 
-Five PostgreSQL tables with cascade deletes:
+Six PostgreSQL tables with cascade deletes:
 
 ```
 users
+password_reset_tokens (user_id → users)
 flows (created_by → users) → modules (created_by → users) → scenarios → test_steps
 ```
 
-- **users**: `id`, `username` (unique), `password_hash` (PBKDF2 SHA-512, `salt:hash`), `created_at`
+- **users**: `id`, `username` (unique), `password_hash` (PBKDF2 SHA-512, `salt:hash`), `role` (`admin`|`tester`), `email`, `created_at`
+- **password_reset_tokens**: `token` (PK), `user_id`, `expires_at`, `used` — 1-hour expiry, single-use
 - **flows**: `id`, `name`, `description`, `group_name` (sidebar grouping), `order_idx`, `created_by`
-- **modules**: `id`, `flow_id`, `label`, `name`, `side` (eDS|HITS), `note`, `parallel_group` (null or shared string key for parallel execution), `order_idx`, `created_by`
-- **scenarios**: `id`, `module_id`, `blid`, `description`, `order_idx` — scenarios hold no status themselves; status is derived from their steps
+- **modules**: `id`, `flow_id`, `label`, `name`, `side` (eDS|HITS), `note`, `parallel_group`, `order_idx`, `created_by`
+- **scenarios**: `id`, `module_id`, `blid`, `description`, `order_idx` — status derived from steps
 - **test_steps**: `id`, `scenario_id`, `description`, `expected`, `status` (untested|pass|fail), `issue_type` (blocker|major|minor|null), `date_tested`, `ado_ticket`, `evidence_url`, `evidence_image` (URL string or JSON array of URLs), `remarks`, `order_idx`
 
-### Ownership Model
+### Role & Ownership Model
 
-`created_by` on `flows` and `modules` governs write access. The server's `canEdit(owner, userId)` returns true if `owner` is null (legacy/unowned) or matches the requesting user. Mutations to modules, scenarios, and steps check the **flow's** owner (traversed via joins). `isOwner(createdBy)` in `AuthContext.tsx` mirrors this on the client.
+- Two roles: `admin` and `tester`. The `SuperAdmin` account (username `SuperAdmin`, role `admin`) is seeded automatically in `initDB()` using the `ADMIN_EMAIL` env var.
+- **No public self-registration** — accounts are created by the admin only via `POST /api/admin/users`.
+- `canEdit(owner, userId, role)` in `index.ts`: returns `true` if `role === 'admin'` OR if `owner` is null/matches userId. Every mutation route passes `req.user!.role` as the third argument.
+- `isOwner(createdBy)` in `AuthContext.tsx` mirrors this: returns `true` for admins or matching userId. Frontend `canEdit` checks use `isOwner(flow.created_by)`.
+- Admin password reset: `POST /api/auth/forgot-password` → token stored in DB → email sent via nodemailer → link `APP_URL/?reset_token=xxx` → `POST /api/auth/reset-password` validates token and sets new password.
+- Admin recovery URL (shown on login page only when `?admin_reset` is in the URL): `yourapp.com/?admin_reset`
 
 ### State Mutation Pattern
 
-Every write method in `AppContext.tsx` follows this cycle: call `api.*()` → on success call `loadFlows(activeFlowId)` to refetch the full nested tree from the server. There is no optimistic update or partial state patch — the whole tree is always reloaded. The `expanded` set (which scenario rows are open) lives only in client state and is never persisted to the DB.
+Every write method in `AppContext.tsx` follows: call `api.*()` → on success call `loadFlows(activeFlowId)` to refetch the full nested tree. No optimistic updates or partial patches. The `expanded` set (open scenario rows) lives only in client state.
 
 ### API Routes
 
-All defined inline in `server/src/index.ts`. All routes except auth require `Authorization: Bearer <token>`.
+All defined inline in `server/src/index.ts`. All routes except the three public auth routes require `Authorization: Bearer <token>`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/auth/register` | Register user → returns `{ token, userId, username }` |
-| POST | `/api/auth/login` | Login → returns `{ token, userId, username }` |
-| GET | `/api/auth/me` | Verify token → current user |
+| POST | `/api/auth/login` | Login → `{ token, userId, username, role }` |
+| POST | `/api/auth/forgot-password` | Send reset email to admin's bound email |
+| POST | `/api/auth/reset-password` | Validate token + set new password |
+| PUT | `/api/auth/change-password` | Authenticated user changes own password (requires current password) |
+| GET | `/api/auth/me` | Verify token → current user + role |
+| GET | `/api/admin/users` | List all users (admin only) |
+| POST | `/api/admin/users` | Create tester account (admin only) |
+| PUT | `/api/admin/users/:id/password` | Reset any user's password (admin only) |
+| PUT | `/api/admin/users/:id/delete` | Delete user — requires `adminPassword` in body, returns 403 on wrong password (not 401) |
 | GET | `/api/flows` | Full nested tree (flows + modules + scenarios + steps) |
 | POST | `/api/flows` | Create flow |
-| PUT | `/api/flows/:id` | Update flow name/description/group (owner only) |
-| DELETE | `/api/flows/:id` | Delete flow (owner only, cascade) |
-| POST | `/api/flows/:flowId/modules` | Add module (flow owner only) |
-| PUT | `/api/modules/:id` | Update module fields or `order_idx` (flow owner only) |
-| DELETE | `/api/modules/:id` | Delete module (flow owner only, cascade) |
-| PUT | `/api/flows/:flowId/modules/reorder` | Swap adjacent modules (transaction, flow owner only) |
-| POST | `/api/modules/:moduleId/scenarios` | Add scenario (flow owner only) |
-| PUT | `/api/scenarios/:id` | Update scenario fields (flow owner only) |
-| DELETE | `/api/scenarios/:id` | Delete scenario + evidence cleanup (flow owner only) |
-| POST | `/api/scenarios/:scenarioId/steps` | Add test step (flow owner only) |
-| PUT | `/api/steps/:id` | Update step fields (flow owner only) |
-| DELETE | `/api/steps/:id` | Delete step + evidence cleanup (flow owner only) |
-| POST | `/api/upload` | Multer upload to R2 or disk → returns `{ url }` |
+| PUT | `/api/flows/:id` | Update flow name/group (owner or admin) |
+| DELETE | `/api/flows/:id` | Delete flow cascade (owner or admin) |
+| POST | `/api/flows/:flowId/modules` | Add module |
+| PUT | `/api/modules/:id` | Update module fields or `order_idx` |
+| DELETE | `/api/modules/:id` | Delete module cascade |
+| PUT | `/api/flows/:flowId/modules/reorder` | Swap adjacent modules (transaction) |
+| POST | `/api/modules/:moduleId/scenarios` | Add scenario |
+| PUT | `/api/scenarios/:id` | Update scenario fields |
+| DELETE | `/api/scenarios/:id` | Delete scenario + evidence cleanup |
+| PUT | `/api/modules/:moduleId/scenarios/reorder` | Reorder scenarios by newIndex (full reindex transaction) |
+| POST | `/api/scenarios/:scenarioId/steps` | Add test step |
+| PUT | `/api/steps/:id` | Update step fields |
+| DELETE | `/api/steps/:id` | Delete step + evidence cleanup |
+| POST | `/api/steps/:stepId/copy` | Copy step (description + expected only) to `targetScenarioId` |
+| POST | `/api/upload` | Multer upload to R2 or disk → `{ url }` |
 
 ### Key Frontend Components
 
 | Component | Purpose |
 |---|---|
-| `Sidebar.tsx` | Flow list grouped by `group_name`, color-coded health dots, progress bars |
-| `FlowDiagram.tsx` | SVG visualization of modules as nodes with status colors, gate indicators, parallel group brackets |
-| `ScenariosView.tsx` | Tabular test execution view — scenarios expand to show/edit their steps inline |
+| `Sidebar.tsx` | Flow list grouped by `group_name`; "Change password" link in footer triggers `ChangePasswordModal` |
+| `FlowDiagram.tsx` | SVG visualization of modules with status colours, gate indicators, parallel group brackets |
+| `ScenariosView.tsx` | Main test execution view — scenarios draggable to reorder, expand to show/edit steps inline |
 | `BLIDDashboard.tsx` | BLID coverage metrics aggregated across the active flow |
-| `DiagnosticsModal.tsx` | Runs `runDiagnostics()` against the active flow; surfaces errors/warnings (missing steps, untested steps, duplicate BLIDs, failed steps without issue type) |
-| `LoginPage.tsx` | Login/register form, shown when `useAuth().user` is null |
-| `ConfirmModal.tsx` | Generic confirmation dialog used for destructive actions |
+| `DiagnosticsModal.tsx` | Runs `runDiagnostics()` — surfaces missing steps, untested steps, duplicate BLIDs, failed steps without issue type |
+| `LoginPage.tsx` | Login-only (no register). "Forgot password?" visible to all; admin reset link shown only when `?admin_reset` is in the URL |
+| `ResetPasswordPage.tsx` | Shown when `?reset_token=xxx` is in the URL; handles the email reset link |
+| `AdminPanel.tsx` | User management modal (admin only): create/delete tester accounts, reset passwords. Delete requires typing exact username + admin password. |
+| `ChangePasswordModal.tsx` | Any logged-in user can change their own password (requires current password) |
+| `ConfirmModal.tsx` | Generic confirmation dialog via `useConfirm()` hook |
 
-`App.tsx` contains `AddModuleModal` with a `QUICK` array of 15 hardcoded module templates (label/name/side) for rapid creation, plus an inline SVG sprite (`<defs>`) for icons via `<use href="#i-*">`.
+`App.tsx` contains `AddModuleModal` with a `QUICK` array of 15 hardcoded module templates, plus an inline SVG sprite for icons via `<use href="#i-*">`. `AdminPanel` is rendered here and toggled by `isAdmin` from `useAuth()`.
 
-`client/src/_backup/` holds snapshot copies of major components — ignore when making changes.
+`client/src/_backup/` — ignore when making changes.
 
 ### Business Logic (`utils.ts`)
 
-- `modStatus(mod)` → `ModuleStatus`: `complete | blocked | major | minor | progress | pending | empty`. Derives status by aggregating all steps across all scenarios in the module. Blocked = any step fail with blocker; complete = all steps pass.
-- `scenarioStatus(sc)` → `'pass' | 'fail' | 'untested'`: worst-case across all steps (any fail → fail; all pass → pass).
-- `scenarioIssueType(sc)` → worst-case issue type across failed steps (blocker > major > minor).
-- `modStats(mod)` → `{ pass, fail, untested, total }`: step-level counts.
-- `flowStats(flow)` → `FlowStats`: aggregates pass/fail/untested counts, `blidPct` (unique BLIDs with ≥1 passing step ÷ total unique BLIDs), `execPct` (tested ÷ total).
-- `isGated(flow, modIdx)`: returns `true` if any earlier module has a blocker step.
-- `STATUS_META`: maps each `ModuleStatus` to `{ label, cls }` — CSS classes prefixed `st-` (e.g. `st-blocked`).
-- `today()`: returns `"DD-Mon-YYYY"` (e.g. `"25-Apr-2026"`), auto-filled on first pass/fail.
+- `modStatus(mod)` → `complete | blocked | major | minor | progress | pending | empty`
+- `scenarioStatus(sc)` → `'pass' | 'fail' | 'untested'`: worst-case across all steps
+- `scenarioIssueType(sc)` → worst-case issue type across failed steps (blocker > major > minor)
+- `modStats(mod)` → `{ pass, fail, untested, total }`: step-level counts
+- `flowStats(flow)` → aggregates counts + `blidPct` + `execPct`
+- `isGated(flow, modIdx)`: true if any earlier module has a blocker step
+- `STATUS_META`: maps `ModuleStatus` → `{ label, cls }` with CSS classes prefixed `st-`
+- `today()`: returns `"DD-Mon-YYYY"`, auto-filled on first pass/fail mark
 
 ### Evidence Image Helpers (`diagnosticsHelpers.ts`)
 
-`evidence_image` on a test step is stored as either a bare URL string (legacy) or a JSON array of URLs. `parseImages(raw)` normalises either format to `string[]`; `serializeImages(urls)` writes back to JSON. Always go through these helpers when reading or writing evidence images.
+`evidence_image` on a step is stored as a bare URL string (legacy) or JSON array of URLs. Always use `parseImages(raw)` to read and `serializeImages(urls)` to write.
+
+### Step Features
+
+- **Copy step**: Each step has a Copy button. `CopyStepModal` (inside `ScenariosView.tsx`) lets the user pick any scenario from the active flow. Only `description` and `expected` are copied — no execution data.
+- **Paste screenshot**: `onPaste` on the step body div captures clipboard images. A visible "Ctrl+V to paste" zone also provides a focusable paste target.
+
+### Scenario Drag Reorder
+
+Scenario rows are `draggable`. `ModuleCard` tracks `dragFromIdx` / `dragOverIdx`. On drop, `useConfirm()` shows: *"Move '[description]' from position X to position Y?"*. Confirmed moves call `moveScenario(moduleId, scenarioId, newIndex)` → `PUT /api/modules/:moduleId/scenarios/reorder` which does a full reindex of all `order_idx` values in a transaction.
 
 ### Export (`exportReport.ts`)
 
-Two export functions, both triggered from `ScenariosView.tsx`:
-- `exportReport(flow)`: generates a self-contained HTML file (inline styles, print-ready) and triggers a browser download.
-- `exportExcel(flow)`: generates a three-sheet XLSX (Summary, Scenarios, Steps) via the `xlsx` library and triggers download.
+- `exportReport(flow)`: self-contained HTML file download (inline styles, print-ready)
+- `exportExcel(flow)`: three-sheet XLSX (Summary, Scenarios, Steps) via `xlsx` library
 
 ### Flow Gating
 
-A module is "gated" if any preceding module in the same flow has a step with `issue_type = 'blocker'`. `isGated()` implements this; the diagram and scenarios view visually block and warn about downstream modules.
+A module is "gated" if any preceding module in the same flow has a step with `issue_type = 'blocker'`. `isGated()` implements this; diagram and scenario views visually block downstream modules.
 
 ### Design System
 
@@ -153,11 +188,11 @@ CSS design tokens in `client/src/index.css`:
 --bg: #f3f4f6          /* page background */
 --panel: #ffffff        /* card/container */
 --sidebar: #0b1b3b      /* dark sidebar */
---ink / --ink-2 / --ink-3   /* text hierarchy */
+--ink / --ink-2 / --ink-3 / --ink-4   /* text hierarchy */
 --ok: #16a34a           /* pass/green */
 --bad: #dc2626          /* fail/blocker/red */
 --warn: #d97706         /* issue/amber */
---blue: #1d4ed8         /* accent */
+--blue-2: #1d4ed8       /* primary accent */
 --sans: 'Inter'         /* body font */
 --mono: 'JetBrains Mono'  /* code/stats font */
 ```

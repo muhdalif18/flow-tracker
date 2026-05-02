@@ -119,8 +119,8 @@ export const STATUS_META: Record<ModuleStatus, { label: string; cls: string }> =
   major:    { label: '⚠ Major Issue',  cls: 'st-major'    },
   minor:    { label: '● Minor Issue',  cls: 'st-minor'    },
   progress: { label: '▷ In Progress',  cls: 'st-progress' },
-  pending:  { label: '— Not Started',  cls: 'st-pending'  },
-  empty:    { label: '— No Scenarios', cls: 'st-empty'    },
+  pending:  { label: 'Not Started',  cls: 'st-pending'  },
+  empty:    { label: 'No Scenarios', cls: 'st-empty'    },
 };
 
 export const today = () =>

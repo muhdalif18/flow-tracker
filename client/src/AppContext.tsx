@@ -57,9 +57,12 @@ interface AppContextValue {
   addScenario: (moduleId: string, data: { blid: string; description: string }) => Promise<void>;
   updateScenario: (id: string, data: object) => Promise<void>;
   deleteScenario: (id: string) => Promise<void>;
+  moveScenario: (moduleId: string, scenarioId: string, newIndex: number) => Promise<void>;
+  moveStep: (scenarioId: string, stepId: string, newIndex: number) => Promise<void>;
   addStep: (scenarioId: string, data: { description: string; expected: string }) => Promise<void>;
   updateStep: (id: string, data: Partial<TestStep>) => Promise<void>;
   deleteStep: (id: string) => Promise<void>;
+  copyStep: (stepId: string, targetScenarioId: string) => Promise<void>;
   uploadImage: (file: File) => Promise<string>;
 }
 
@@ -103,9 +106,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addScenario  = useCallback(async (mid: string, d: { blid: string; description: string }) => { await api.addScenario(mid, d); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const updateScenario = useCallback(async (id: string, data: object) => { await api.updateScenario(id, data as any); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const deleteScenario = useCallback(async (id: string) => { await api.deleteScenario(id); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
+  const moveScenario = useCallback(async (mid: string, sid: string, newIndex: number) => { await api.reorderScenario(mid, sid, newIndex); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
+  const moveStep     = useCallback(async (scid: string, stid: string, newIndex: number) => { await api.reorderStep(scid, stid, newIndex); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const addStep    = useCallback(async (sid: string, d: { description: string; expected: string }) => { await api.addStep(sid, d); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const updateStep = useCallback(async (id: string, data: Partial<TestStep>) => { await api.updateStep(id, data); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const deleteStep = useCallback(async (id: string) => { await api.deleteStep(id); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
+  const copyStep   = useCallback(async (stepId: string, targetScenarioId: string) => { await api.copyStep(stepId, targetScenarioId); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const uploadImage    = useCallback(async (file: File) => { const { url } = await api.uploadImage(file); return url; }, []);
 
   const activeFlow = state.flows.find(f => f.id === state.activeFlowId);
@@ -117,8 +123,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTab:    tab => dispatch({ type: 'SET_TAB',    tab }),
       toggleExpand: id => dispatch({ type: 'TOGGLE_EXPAND', id }),
       createFlow, updateFlow, deleteFlow, addModule, deleteModule, moveModule,
-      addScenario, updateScenario, deleteScenario,
-      addStep, updateStep, deleteStep, uploadImage,
+      addScenario, updateScenario, deleteScenario, moveScenario,
+      addStep, updateStep, deleteStep, copyStep, moveStep, uploadImage,
     }}>
       {children}
     </Ctx.Provider>

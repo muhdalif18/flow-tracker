@@ -668,6 +668,96 @@ app.put('/api/flows/:flowId/modules/reorder', async (req: AuthRequest, res) => {
   res.json({ ok: true });
 });
 
+// ── Scenario reorder ──────────────────────────────────────────────────────
+app.put('/api/modules/:moduleId/scenarios/reorder', async (req: AuthRequest, res) => {
+  const { scenarioId, newIndex } = req.body as { scenarioId: string; newIndex: number };
+  if (!canEdit(await getFlowOwnerByModule(req.params.moduleId), req.user!.userId, req.user!.role))
+    return res.status(403).json({ error: 'Not authorized' });
+
+  const { rows } = await pool.query(
+    'SELECT id FROM scenarios WHERE module_id = $1 ORDER BY order_idx',
+    [req.params.moduleId]
+  );
+  const fromIdx = rows.findIndex(s => s.id === scenarioId);
+  if (fromIdx === -1 || newIndex < 0 || newIndex >= rows.length || fromIdx === newIndex)
+    return res.json({ ok: false });
+
+  const reordered = [...rows];
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(newIndex, 0, moved);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < reordered.length; i++)
+      await client.query('UPDATE scenarios SET order_idx = $1 WHERE id = $2', [i, reordered[i].id]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true });
+});
+
+// ── Step reorder ──────────────────────────────────────────────────────────
+app.put('/api/scenarios/:scenarioId/steps/reorder', async (req: AuthRequest, res) => {
+  const { stepId, newIndex } = req.body as { stepId: string; newIndex: number };
+  if (!canEdit(await getFlowOwnerByScenario(req.params.scenarioId), req.user!.userId, req.user!.role))
+    return res.status(403).json({ error: 'Not authorized' });
+
+  const { rows } = await pool.query(
+    'SELECT id FROM test_steps WHERE scenario_id = $1 ORDER BY order_idx',
+    [req.params.scenarioId]
+  );
+  const fromIdx = rows.findIndex(s => s.id === stepId);
+  if (fromIdx === -1 || newIndex < 0 || newIndex >= rows.length || fromIdx === newIndex)
+    return res.json({ ok: false });
+
+  const reordered = [...rows];
+  const [moved] = reordered.splice(fromIdx, 1);
+  reordered.splice(newIndex, 0, moved);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < reordered.length; i++)
+      await client.query('UPDATE test_steps SET order_idx = $1 WHERE id = $2', [i, reordered[i].id]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  res.json({ ok: true });
+});
+
+// ── Copy step to another scenario ─────────────────────────────────────────
+app.post('/api/steps/:stepId/copy', async (req: AuthRequest, res) => {
+  const { targetScenarioId } = req.body as { targetScenarioId?: string };
+  if (!targetScenarioId) return res.status(400).json({ error: 'targetScenarioId required' });
+  if (!canEdit(await getFlowOwnerByStep(req.params.stepId), req.user!.userId, req.user!.role))
+    return res.status(403).json({ error: 'Not authorized' });
+  if (!canEdit(await getFlowOwnerByScenario(targetScenarioId), req.user!.userId, req.user!.role))
+    return res.status(403).json({ error: 'Not authorized to add to target scenario' });
+
+  const { rows } = await pool.query(
+    'SELECT description, expected FROM test_steps WHERE id = $1', [req.params.stepId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Step not found' });
+
+  const id = uuidv4();
+  const order = await nextOrder('test_steps', 'scenario_id', targetScenarioId);
+  await pool.query(
+    'INSERT INTO test_steps (id, scenario_id, description, expected, order_idx) VALUES ($1,$2,$3,$4,$5)',
+    [id, targetScenarioId, rows[0].description, rows[0].expected, order]
+  );
+  const { rows: newStep } = await pool.query('SELECT * FROM test_steps WHERE id = $1', [id]);
+  res.json(newStep[0]);
+});
+
 // ── Image upload ──────────────────────────────────────────────────────────
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });

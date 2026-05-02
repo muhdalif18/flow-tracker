@@ -139,6 +139,19 @@ const IcoLock = () => (
     <path d="M5.5 7V5a2.5 2.5 0 115 0v2" />
   </svg>
 );
+const IcoCopy = () => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="5" width="8" height="9" rx="1" />
+    <path d="M3 11H2a1 1 0 01-1-1V2a1 1 0 011-1h8a1 1 0 011 1v1" />
+  </svg>
+);
+const IcoDrag = () => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+    <circle cx="5.5" cy="4" r="1.2"/><circle cx="10.5" cy="4" r="1.2"/>
+    <circle cx="5.5" cy="8" r="1.2"/><circle cx="10.5" cy="8" r="1.2"/>
+    <circle cx="5.5" cy="12" r="1.2"/><circle cx="10.5" cy="12" r="1.2"/>
+  </svg>
+);
 const IcoDoc = () => (
   <svg
     width="18"
@@ -222,6 +235,108 @@ function AddScenarioModal({
   );
 }
 
+// ── Copy Step Modal ───────────────────────────────────────────────────────────
+function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void }) {
+  const { state, copyStep } = useApp();
+  const { isOwner } = useAuth();
+  const [selectedId, setSelectedId] = useState('');
+  const [search,     setSearch]     = useState('');
+  const [copying,    setCopying]    = useState(false);
+  const [done,       setDone]       = useState(false);
+
+  // Only flows the current user owns
+  const myFlows = state.flows.filter(f => isOwner(f.created_by));
+
+  const allScenarios = myFlows.flatMap(f =>
+    f.modules.flatMap(m =>
+      m.scenarios.map(sc => ({ ...sc, moduleLabel: m.label, moduleName: m.name, moduleId: m.id, flowName: f.name, flowId: f.id }))
+    )
+  );
+
+  const filtered = search.trim()
+    ? allScenarios.filter(sc =>
+        sc.description.toLowerCase().includes(search.toLowerCase()) ||
+        sc.blid.toLowerCase().includes(search.toLowerCase()) ||
+        sc.moduleName.toLowerCase().includes(search.toLowerCase()) ||
+        sc.flowName.toLowerCase().includes(search.toLowerCase())
+      )
+    : allScenarios;
+
+  // Group by flow → module
+  const grouped = myFlows.flatMap(f =>
+    f.modules.map(m => ({
+      flowName: f.name,
+      m,
+      scenarios: filtered.filter(sc => sc.moduleId === m.id),
+    }))
+  ).filter(g => g.scenarios.length > 0);
+
+  const handleCopy = async () => {
+    if (!selectedId) return;
+    setCopying(true);
+    await copyStep(step.id, selectedId);
+    setCopying(false);
+    setDone(true);
+    setTimeout(onClose, 1100);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{ width: 500, maxHeight: '78vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <h3>Copy Step to Scenario</h3>
+
+        {done ? (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ok)', fontWeight: 600, fontSize: 14 }}>✓ Step copied successfully!</div>
+        ) : (
+          <>
+            <input
+              autoFocus
+              placeholder="Search scenarios…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', padding: '8px 11px', border: '1px solid var(--line)', borderRadius: 7, fontFamily: 'var(--sans)', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+            />
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 8 }}>
+              {grouped.length === 0 && (
+                <div style={{ padding: 16, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No scenarios found.</div>
+              )}
+              {grouped.map(({ flowName, m, scenarios }) => (
+                <div key={m.id}>
+                  <div style={{ padding: '6px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', background: 'var(--hover)', borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ opacity: .6 }}>{flowName} · </span>{m.label} · {m.name}
+                  </div>
+                  {scenarios.map(sc => (
+                    <button
+                      key={sc.id}
+                      onClick={() => setSelectedId(sc.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px',
+                        border: 'none', borderBottom: '1px solid var(--line)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--sans)',
+                        background: selectedId === sc.id ? 'rgba(29,78,216,.06)' : 'transparent',
+                        borderLeft: selectedId === sc.id ? '3px solid var(--blue-2)' : '3px solid transparent',
+                      }}
+                    >
+                      <span className="blid" style={{ flexShrink: 0 }}>{sc.blid}</span>
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{sc.description}</span>
+                      <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{sc.steps.length} steps</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions" style={{ marginTop: 12 }}>
+              <button type="button" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={handleCopy} disabled={!selectedId || copying}>
+                {copying ? 'Copying…' : 'Copy Step Here'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Step Card ─────────────────────────────────────────────────────────────────
 function StepCard({
   step,
@@ -234,8 +349,9 @@ function StepCard({
 }) {
   const { updateStep, deleteStep, uploadImage } = useApp();
   const { confirm, modal: confirmModal } = useConfirm();
-  const [collapsed, setCollapsed] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [collapsed,      setCollapsed]      = useState(true);
+  const [uploading,      setUploading]      = useState(false);
+  const [showCopyModal,  setShowCopyModal]  = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const upd = (data: Partial<TestStep>) => updateStep(step.id, data);
   const images = parseImages(step.evidence_image);
@@ -331,6 +447,13 @@ function StepCard({
               : undefined
           }
         />
+        <button
+          className="btn-xs"
+          title="Copy step to another scenario"
+          onClick={(e) => { e.stopPropagation(); setShowCopyModal(true); }}
+        >
+          <IcoCopy />
+        </button>
         {canEdit && (
           <button
             className="btn-xs btn-danger"
@@ -344,6 +467,7 @@ function StepCard({
           </button>
         )}
       </div>
+      {showCopyModal && <CopyStepModal step={step} onClose={() => setShowCopyModal(false)} />}
 
       {/* ── Body ── */}
       {!collapsed && (
@@ -576,12 +700,14 @@ function StepCard({
 
 // ── Expand Panel (step list) ──────────────────────────────────────────────────
 function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
-  const { addStep, deleteScenario } = useApp();
+  const { addStep, deleteScenario, moveStep } = useApp();
   const { confirm, modal: confirmModal } = useConfirm();
-  const [showAdd, setShowAdd] = useState(false);
-  const [stepDesc, setStepDesc] = useState("");
-  const [stepExp, setStepExp] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [stepDesc,     setStepDesc]     = useState("");
+  const [stepExp,      setStepExp]      = useState("");
+  const [adding,       setAdding]       = useState(false);
+  const [dragFromIdx,  setDragFromIdx]  = useState<number | null>(null);
+  const [dragOverIdx,  setDragOverIdx]  = useState<number | null>(null);
 
   const handleAddStep = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -615,7 +741,37 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
       )}
 
       {sc.steps.map((step, i) => (
-        <StepCard key={step.id} step={step} stepNo={i + 1} canEdit={canEdit} />
+        <div
+          key={step.id}
+          draggable={canEdit}
+          onDragStart={() => setDragFromIdx(i)}
+          onDragOver={e => { e.preventDefault(); setDragOverIdx(i); }}
+          onDragEnd={() => { setDragFromIdx(null); setDragOverIdx(null); }}
+          onDrop={async () => {
+            const from = dragFromIdx;
+            const to   = i;
+            setDragFromIdx(null);
+            setDragOverIdx(null);
+            if (from === null || from === to) return;
+            const ok = await confirm({
+              message: `Move "Step ${from + 1}" to position ${to + 1}?`,
+              confirmLabel: 'Move',
+              danger: false,
+            });
+            if (ok) await moveStep(sc.id, sc.steps[from].id, to);
+          }}
+          style={{
+            outline: dragOverIdx === i && dragFromIdx !== null && dragFromIdx !== i
+              ? '2px dashed var(--blue-2)'
+              : 'none',
+            borderRadius: 8,
+          }}
+        >
+          {canEdit && (
+            <div style={{ padding: '3px 10px 0', cursor: 'grab', userSelect: 'none' }} title="Drag to reorder" />
+          )}
+          <StepCard step={step} stepNo={i + 1} canEdit={canEdit} />
+        </div>
       ))}
 
       {canEdit &&
@@ -696,7 +852,14 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
 }
 
 // ── Scenario Row ──────────────────────────────────────────────────────────────
-function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
+function ScenarioRow({
+  sc, canEdit, isDragOver,
+  onDragStart, onDragOver, onDrop, onDragEnd,
+}: {
+  sc: Scenario; canEdit: boolean; isDragOver: boolean;
+  onDragStart: () => void; onDragOver: () => void;
+  onDrop: () => void; onDragEnd: () => void;
+}) {
   const { state, toggleExpand } = useApp();
   const isExp = state.expanded.has(sc.id);
 
@@ -716,8 +879,16 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   return (
     <>
       <tr
-        className={`sc-row ${derived === "pass" ? "row-pass" : derived === "fail" ? "row-fail" : ""}`}
+        className={`sc-row ${derived === "pass" ? "row-pass" : derived === "fail" ? "row-fail" : ""} ${isDragOver ? "sc-row-drag-over" : ""}`}
+        draggable={canEdit}
+        onDragStart={onDragStart}
+        onDragOver={e => { e.preventDefault(); onDragOver(); }}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
       >
+        {/* Drag handle */}
+        <td style={{ width: 24, cursor: canEdit ? 'grab' : 'default' }} title={canEdit ? 'Drag to reorder' : ''} />
+
         {/* BLID */}
         <td>
           <span className="blid">{sc.blid}</span>
@@ -807,7 +978,7 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
 
       {isExp && (
         <tr className="exp-row">
-          <td colSpan={6}>
+          <td colSpan={7}>
             <ExpandPanel sc={sc} canEdit={canEdit} />
           </td>
         </tr>
@@ -818,11 +989,13 @@ function ScenarioRow({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
 
 // ── Module Card ───────────────────────────────────────────────────────────────
 function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
-  const { deleteModule, moveModule } = useApp();
+  const { deleteModule, moveModule, moveScenario } = useApp();
   const { isOwner } = useAuth();
   const { confirm, modal: confirmModal } = useConfirm();
-  const [showAdd, setShowAdd] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [collapsed,    setCollapsed]    = useState(false);
+  const [dragFromIdx,  setDragFromIdx]  = useState<number | null>(null);
+  const [dragOverIdx,  setDragOverIdx]  = useState<number | null>(null);
 
   const canEdit = isOwner(flow.created_by);
   const st = modStatus(mod);
@@ -920,15 +1093,15 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
 
             {/* Mini counts */}
             <div className="mini-ct">
-              <div className="mct mct-p">
+              <div className="mct mct-p" title="Pass">
                 <span className="mct-dot" />
                 {ms.pass}
               </div>
-              <div className="mct mct-f">
+              <div className="mct mct-f" title="Fail">
                 <span className="mct-dot" />
                 {ms.fail}
               </div>
-              <div className="mct mct-u">
+              <div className="mct mct-u" title="Untested">
                 <span className="mct-dot" />
                 {ms.untested}
               </div>
@@ -946,15 +1119,25 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
                 </button>
                 <button
                   className="mod-ico-btn"
-                  onClick={() => moveModule(flow.id, mod.id, -1)}
                   title="Move up"
+                  onClick={async () => {
+                    const idx = flow.modules.indexOf(mod);
+                    if (idx <= 0) return;
+                    if (await confirm({ message: `Move "${mod.name}" above "${flow.modules[idx - 1].name}"?`, confirmLabel: 'Move', danger: false }))
+                      moveModule(flow.id, mod.id, -1);
+                  }}
                 >
                   <IcoUp />
                 </button>
                 <button
                   className="mod-ico-btn"
-                  onClick={() => moveModule(flow.id, mod.id, 1)}
                   title="Move down"
+                  onClick={async () => {
+                    const idx = flow.modules.indexOf(mod);
+                    if (idx >= flow.modules.length - 1) return;
+                    if (await confirm({ message: `Move "${mod.name}" below "${flow.modules[idx + 1].name}"?`, confirmLabel: 'Move', danger: false }))
+                      moveModule(flow.id, mod.id, 1);
+                  }}
                 >
                   <IcoDown />
                 </button>
@@ -1015,6 +1198,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
           <table className="sc-table">
             <thead>
               <tr>
+                <th style={{ width: 24 }} />
                 <th style={{ width: 90 }}>BLID</th>
                 <th>Scenario</th>
                 <th style={{ width: 85, textAlign: "center" }}>Status</th>
@@ -1024,8 +1208,30 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
               </tr>
             </thead>
             <tbody>
-              {mod.scenarios.map((sc) => (
-                <ScenarioRow key={sc.id} sc={sc} canEdit={canEdit} />
+              {mod.scenarios.map((sc, idx) => (
+                <ScenarioRow
+                  key={sc.id}
+                  sc={sc}
+                  canEdit={canEdit}
+                  isDragOver={dragOverIdx === idx && dragFromIdx !== null && dragFromIdx !== idx}
+                  onDragStart={() => setDragFromIdx(idx)}
+                  onDragOver={() => setDragOverIdx(idx)}
+                  onDragEnd={() => { setDragFromIdx(null); setDragOverIdx(null); }}
+                  onDrop={async () => {
+                    const from = dragFromIdx;
+                    const to   = idx;
+                    setDragFromIdx(null);
+                    setDragOverIdx(null);
+                    if (from === null || from === to) return;
+                    const sc = mod.scenarios[from];
+                    const ok = await confirm({
+                      message: `Move "${sc.description}" from position ${from + 1} to position ${to + 1}?`,
+                      confirmLabel: 'Move',
+                      danger: false,
+                    });
+                    if (ok) await moveScenario(mod.id, sc.id, to);
+                  }}
+                />
               ))}
             </tbody>
           </table>

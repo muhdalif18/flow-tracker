@@ -84,11 +84,19 @@ export const api = {
     put(`${BASE}/scenarios/${id}`, data),
   deleteScenario: (id: string) => del(`${BASE}/scenarios/${id}`),
 
+  // Scenarios
+  reorderScenario: (moduleId: string, scenarioId: string, newIndex: number) =>
+    put(`${BASE}/modules/${moduleId}/scenarios/reorder`, { scenarioId, newIndex }),
+  reorderStep: (scenarioId: string, stepId: string, newIndex: number) =>
+    put(`${BASE}/scenarios/${scenarioId}/steps/reorder`, { stepId, newIndex }),
+
   // Steps
   addStep: (scenarioId: string, data: { description: string; expected: string }) =>
     post(`${BASE}/scenarios/${scenarioId}/steps`, data),
   updateStep: (id: string, data: Partial<TestStep>) => put(`${BASE}/steps/${id}`, data),
   deleteStep: (id: string) => del(`${BASE}/steps/${id}`),
+  copyStep: (stepId: string, targetScenarioId: string) =>
+    post(`${BASE}/steps/${stepId}/copy`, { targetScenarioId }),
 
   // Image upload
   uploadImage: async (file: File): Promise<{ url: string }> => {

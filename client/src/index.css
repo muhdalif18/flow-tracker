@@ -672,6 +672,7 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .sc-row:last-of-type td { border-bottom: none; }
 .sc-row { transition: background var(--t); }
 .sc-row:hover td { background: rgba(0,0,0,.015); }
+.sc-row-drag-over td { background: rgba(29,78,216,.06) !important; box-shadow: inset 0 2px 0 var(--blue-2); }
 .row-pass    { background: #f0fdf4; }
 .row-fail    { background: #fff8f8; }
 .row-pass:hover td { background: #ecfdf5 !important; }
