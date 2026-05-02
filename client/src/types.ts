@@ -1,4 +1,4 @@
-export interface TestStep {
+﻿export interface TestStep {
   id: string;
   scenario_id: string;
   description: string;
@@ -49,7 +49,7 @@ export interface Flow {
 }
 
 export type ModuleStatus = 'complete' | 'blocked' | 'major' | 'minor' | 'progress' | 'pending' | 'empty';
-export type ActiveTab = 'diagram' | 'scenarios' | 'blid';
+export type ActiveTab = 'diagram' | 'scenarios' | 'blid' | 'overview';
 
 export interface FlowStats {
   total: number;

@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+﻿import * as XLSX from 'xlsx';
 import type { Flow } from './types';
 import { flowStats, modStatus, scenarioStatus, scenarioIssueType, STATUS_META, modStats } from './utils';
 
@@ -6,14 +6,30 @@ function esc(s: string | null | undefined): string {
   return (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function parseImages(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const p = JSON.parse(raw);
-    if (Array.isArray(p)) return p.filter(Boolean);
-  } catch {}
-  return [raw];
+function formatDateDDMMYYYY(value: string | null | undefined): string {
+  const v = (value ?? '').trim();
+  if (!v) return '';
+
+  // ISO date from date input: yyyy-mm-dd
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+
+  // Legacy stored format: dd Mon yyyy
+  const legacy = v.match(/^(\d{1,2})\s([A-Za-z]{3})\s(\d{4})$/);
+  if (legacy) {
+    const monthMap: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    };
+    const dd = legacy[1].padStart(2, '0');
+    const mm = monthMap[legacy[2].toLowerCase()];
+    const yyyy = legacy[3];
+    if (mm) return `${dd}/${mm}/${yyyy}`;
+  }
+
+  return v;
 }
+
 
 const MOD_COLOR: Record<string, { bg: string; color: string; border: string }> = {
   complete: { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
@@ -25,10 +41,42 @@ const MOD_COLOR: Record<string, { bg: string; color: string; border: string }> =
   empty:    { bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' },
 };
 
-export function exportReport(flow: Flow) {
-  const stats   = flowStats(flow);
+export function exportReport(input: Flow | Flow[], opts: { onlyFailed?: boolean } = {}) {
+  // Normalise to array; preserve per-flow identity for labelling
+  const inputFlows: Flow[] = Array.isArray(input) ? input : [input];
+  const isGroup = inputFlows.length > 1;
+  const reportTitle = isGroup
+    ? (inputFlows[0].group_name?.trim() || 'Group Report')
+    : inputFlows[0].name;
+  const reportDescription = isGroup
+    ? `${inputFlows.length} flows: ${inputFlows.map(f => f.name).join(', ')}`
+    : inputFlows[0].description;
+
+  // Filter to only failed scenarios if requested, per flow
+  const filteredFlows: Flow[] = inputFlows.map(flow => opts.onlyFailed ? {
+    ...flow,
+    modules: flow.modules.map(m => ({
+      ...m,
+      scenarios: m.scenarios.filter(sc => sc.steps.some(s => s.status === 'fail')),
+    })).filter(m => m.scenarios.length > 0),
+  } : flow);
+
+  // Aggregate stats across all flows
+  const allStats = filteredFlows.map(flowStats);
+  const stats = {
+    pass:     allStats.reduce((n, s) => n + s.pass, 0),
+    fail:     allStats.reduce((n, s) => n + s.fail, 0),
+    untested: allStats.reduce((n, s) => n + s.untested, 0),
+    total:    allStats.reduce((n, s) => n + s.total, 0),
+    blidPct:  Math.round(allStats.reduce((n, s) => n + s.blidPass, 0) / Math.max(allStats.reduce((n, s) => n + s.blidTotal, 0), 1) * 100),
+    blidPass: allStats.reduce((n, s) => n + s.blidPass, 0),
+    blidTotal:allStats.reduce((n, s) => n + s.blidTotal, 0),
+    execPct:  0, passPct: 0,
+  };
+
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const totalScenarios = flow.modules.reduce((n, m) => n + m.scenarios.length, 0);
+  const totalScenarios = filteredFlows.reduce((n, f) => f.modules.reduce((n2, m) => n2 + m.scenarios.length, n), 0);
+  const totalMods      = filteredFlows.reduce((n, f) => n + f.modules.length, 0);
   const execPct = stats.total > 0 ? Math.round((stats.pass + stats.fail) / stats.total * 100) : 0;
   const passPct = stats.total > 0 ? Math.round(stats.pass / stats.total * 100) : 0;
 
@@ -40,8 +88,21 @@ export function exportReport(flow: Flow) {
     minor: '#f59e0b', progress: '#3b82f6', pending: '#94a3b8', empty: '#cbd5e1',
   };
 
+  // ── Flow section header row (only in group reports) ───────────────────────
+  const flowHeaderRow = (flow: Flow) => isGroup ? `
+    <tr>
+      <td colspan="8" style="padding:12px 14px 6px;border-top:2px solid #e2e8f0;border-bottom:1px solid #f1f5f9;background:#f8fafc">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.07em">${esc(flow.name)}</span>
+        </div>
+      </td>
+    </tr>` : '';
+
   // ── Module summary table ──────────────────────────────────────────────────
-  const summaryRows = flow.modules.map(mod => {
+  const summaryRows = filteredFlows.flatMap(fl => [
+    flowHeaderRow(fl),
+    ...fl.modules.map(mod => {
     const st  = modStatus(mod);
     const ms  = modStats(mod);
     const sm  = STATUS_META[st];
@@ -80,10 +141,18 @@ export function exportReport(flow: Flow) {
         </div>
       </td>
     </tr>`;
-  }).join('');
+    })
+  ]).join('');
 
   // ── Detailed module cards ─────────────────────────────────────────────────
-  const modulesHtml = flow.modules.map(mod => {
+  const modulesHtml = filteredFlows.flatMap(fl => [
+    isGroup ? `
+    <div style="margin-bottom:8px;margin-top:20px;padding:10px 16px;background:linear-gradient(90deg,#1e3a5f,#0f2a4a);border-radius:10px;display:flex;align-items:center;gap:10px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span style="font-size:13px;font-weight:700;color:#e2e8f0;letter-spacing:.01em">${esc(fl.name)}</span>
+      <span style="font-size:11px;color:#64748b">${fl.modules.length} modules · ${fl.modules.reduce((n,m) => n+m.scenarios.length,0)} scenarios</span>
+    </div>` : '',
+    ...fl.modules.map(mod => {
     const st        = modStatus(mod);
     const mc        = MOD_COLOR[st] ?? MOD_COLOR.pending;
     const sm        = STATUS_META[st];
@@ -107,7 +176,6 @@ export function exportReport(flow: Flow) {
       const sstLabel = sst === 'pass' ? '✓ PASS' : sst === 'fail' ? '✗ FAIL' : 'N/T';
 
       const stepsHtml = sc2.steps.map((step, si) => {
-        const imgs   = parseImages(step.evidence_image);
         const stColor = step.status === 'pass' ? '#16a34a' : step.status === 'fail' ? '#dc2626' : '#94a3b8';
         const stBg    = step.status === 'pass' ? '#f0fdf4' : step.status === 'fail' ? '#fef2f2' : '#f8fafc';
         const stBd    = step.status === 'pass' ? '#bbf7d0' : step.status === 'fail' ? '#fecaca' : '#e2e8f0';
@@ -127,20 +195,15 @@ export function exportReport(flow: Flow) {
           <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
             ${step.issue_type ? `<span style="font-size:11px;font-weight:700;color:${issueColor};background:${issueColor}18;border:1px solid ${issueColor}33;border-radius:4px;padding:2px 7px">${step.issue_type.toUpperCase()}</span>` : ''}
           </td>
-          <td style="padding:9px 12px;font-size:11px;color:#64748b;white-space:nowrap;vertical-align:top">${esc(step.date_tested)}</td>
+          <td style="padding:9px 12px;font-size:11px;color:#64748b;white-space:nowrap;vertical-align:top">${esc(formatDateDDMMYYYY(step.date_tested))}</td>
           <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
             ${step.ado_ticket ? `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:500">${esc(step.ado_ticket)}</span>` : ''}
           </td>
-          <td style="padding:9px 12px;vertical-align:top">
-            ${step.evidence_url ? `<a href="${esc(step.evidence_url)}" target="_blank" style="font-size:11px;color:#1d4ed8;text-decoration:none;border:1px solid #bfdbfe;padding:2px 7px;border-radius:5px;background:#eff6ff">🔗 Link</a>` : ''}
+          <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
+            ${step.evidence_url ? `<a href="${esc(step.evidence_url)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;color:#1d4ed8;text-decoration:none;border:1px solid #bfdbfe;padding:3px 9px;border-radius:5px;background:#eff6ff;white-space:nowrap"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Link</a>` : ''}
           </td>
-          <td style="padding:9px 12px;vertical-align:top">
-            ${step.remarks ? `<div style="font-size:11px;color:#64748b;max-width:180px;line-height:1.4">${esc(step.remarks)}</div>` : ''}
-          </td>
-          <td style="padding:9px 12px;vertical-align:top">
-            <div style="display:flex;flex-wrap:wrap;gap:4px">
-              ${imgs.map(url => `<img src="${esc(url)}" onclick="window.open('${esc(url)}')" style="width:52px;height:52px;object-fit:cover;border-radius:5px;border:1px solid #e2e8f0;cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'" />`).join('')}
-            </div>
+          <td style="padding:9px 12px;vertical-align:top;min-width:160px">
+            ${step.remarks ? `<div style="font-size:11.5px;color:#475569;line-height:1.5;white-space:pre-wrap;word-break:break-word">${esc(step.remarks)}</div>` : ''}
           </td>
         </tr>`;
       }).join('');
@@ -172,7 +235,6 @@ export function exportReport(flow: Flow) {
                 <th style="padding:7px 12px;text-align:left;font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.07em">ADO</th>
                 <th style="padding:7px 12px;text-align:left;font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.07em">EVIDENCE</th>
                 <th style="padding:7px 12px;text-align:left;font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.07em">REMARKS</th>
-                <th style="padding:7px 12px;text-align:left;font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.07em">SCREENSHOTS</th>
               </tr>
             </thead>
             <tbody>${stepsHtml}</tbody>
@@ -207,14 +269,15 @@ export function exportReport(flow: Flow) {
       </div>
       <div style="padding:14px 16px;background:#fafafa">${scenariosHtml}</div>
     </div>`;
-  }).join('');
+    })
+  ]).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Test Report — ${esc(flow.name)}</title>
+  <title>Test Report — ${esc(reportTitle)}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#f1f5f9;color:#1e293b;font-size:14px;line-height:1.5}
@@ -239,8 +302,8 @@ export function exportReport(flow: Flow) {
   <!-- Header card -->
   <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);color:#fff;border-radius:14px;padding:32px 36px;margin-bottom:24px;box-shadow:0 4px 20px rgba(0,0,0,.18)">
     <div style="font-size:10.5px;font-weight:700;letter-spacing:.14em;color:#64748b;text-transform:uppercase;margin-bottom:10px">Test Execution Report</div>
-    <div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">${esc(flow.name)}</div>
-    ${flow.description ? `<div style="font-size:13px;color:#94a3b8;margin-bottom:20px">${esc(flow.description)}</div>` : '<div style="margin-bottom:20px"></div>'}
+    <div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">${esc(reportTitle)}</div>
+    ${reportDescription ? `<div style="font-size:13px;color:#94a3b8;margin-bottom:20px">${esc(reportDescription)}</div>` : '<div style="margin-bottom:20px"></div>'}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
       ${[
         { val: stats.pass,       label: 'Pass',         color: '#4ade80' },
@@ -255,14 +318,14 @@ export function exportReport(flow: Flow) {
           <div style="font-size:10px;color:#94a3b8;margin-top:5px;letter-spacing:.06em;text-transform:uppercase">${s.label}</div>
         </div>`).join('')}
     </div>
-    <div style="font-size:11px;color:#475569">Generated ${dateStr} &nbsp;·&nbsp; ${flow.modules.length} modules &nbsp;·&nbsp; ${totalScenarios} scenarios &nbsp;·&nbsp; ${stats.total} steps</div>
+    <div style="font-size:11px;color:#475569">Generated ${dateStr} &nbsp;·&nbsp; ${totalMods} modules &nbsp;·&nbsp; ${totalScenarios} scenarios &nbsp;·&nbsp; ${stats.total} steps</div>
   </div>
 
   <!-- Module summary table -->
   <div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid #e2e8f0;margin-bottom:28px">
     <div style="padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px">
       <span style="font-size:13px;font-weight:700;color:#0f172a">Module Summary</span>
-      <span style="font-size:11px;color:#94a3b8;margin-left:4px">${flow.modules.length} modules</span>
+      <span style="font-size:11px;color:#94a3b8;margin-left:4px">${totalMods} modules</span>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse">
@@ -286,7 +349,7 @@ export function exportReport(flow: Flow) {
   <!-- Detailed results -->
   <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
     <span style="font-size:15px;font-weight:700;color:#0f172a">Detailed Results</span>
-    <span style="font-size:12px;color:#94a3b8">${totalScenarios} scenarios across ${flow.modules.length} modules</span>
+    <span style="font-size:12px;color:#94a3b8">${totalScenarios} scenarios across ${totalMods} modules</span>
   </div>
   ${modulesHtml}
 
@@ -298,7 +361,7 @@ export function exportReport(flow: Flow) {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `${flow.name.replace(/[^a-zA-Z0-9]/g, '_')}_report_${dateStr.replace(/ /g, '_')}.html`;
+  a.download = `${reportTitle.replace(/[^a-zA-Z0-9]/g, '_')}_report_${dateStr.replace(/ /g, '_')}.html`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -379,7 +442,7 @@ export function exportExcel(flow: Flow) {
             i + 1, step.description, step.expected,
             step.status === 'pass' ? 'PASS' : step.status === 'fail' ? 'FAIL' : 'N/T',
             step.issue_type?.toUpperCase() || '',
-            step.date_tested || '', step.ado_ticket || '', step.evidence_url || '', step.remarks || '',
+            formatDateDDMMYYYY(step.date_tested), step.ado_ticket || '', step.evidence_url || '', step.remarks || '',
           ]);
         }
       }

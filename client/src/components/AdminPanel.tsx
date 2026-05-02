@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { FEATURE_FLAGS, getFlag, setFlag } from '../featureFlags';
 
 interface TesterUser {
   id: string;
@@ -276,7 +277,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Admin accounts */}
-        <div style={{ ...sectionStyle, borderBottom: 'none', paddingBottom: 0 }}>
+        <div style={sectionStyle}>
           <div style={sectionTitle}>Admin Accounts ({admins.length})</div>
           {admins.map(u => (
             <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 13 }}>
@@ -286,6 +287,76 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </div>
+
+        {/* Feature Preview */}
+        <FeaturePreview />
+      </div>
+    </div>
+  );
+}
+
+function FeaturePreview() {
+  const [flags, setFlags] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(FEATURE_FLAGS.map(f => [f.key, getFlag(f.key)]))
+  );
+
+  const toggle = (key: string) => {
+    const next = !flags[key];
+    setFlag(key, next);
+    setFlags(prev => ({ ...prev, [key]: next }));
+  };
+
+  return (
+    <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
+      <div style={sectionTitle}>Feature Preview</div>
+      <p style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.5 }}>
+        Experimental features. Changes take effect on next page refresh.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {FEATURE_FLAGS.map(flag => (
+          <div
+            key={flag.key}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 12px', borderRadius: 8,
+              border: '1px solid var(--line)', background: flags[flag.key] ? 'var(--blue-soft)' : 'var(--hover)',
+              transition: 'background .15s',
+            }}
+          >
+            <button
+              role="switch"
+              aria-checked={flags[flag.key]}
+              onClick={() => toggle(flag.key)}
+              style={{
+                width: 36, height: 20, borderRadius: 99, border: 'none', cursor: 'pointer',
+                background: flags[flag.key] ? 'var(--blue-2)' : '#cbd5e1',
+                position: 'relative', flexShrink: 0, transition: 'background .2s',
+                padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 3,
+                left: flags[flag.key] ? 19 : 3,
+                width: 14, height: 14, borderRadius: '50%',
+                background: '#fff', transition: 'left .2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+              }} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>
+                {flag.label}
+                {flags[flag.key] && (
+                  <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, background: 'var(--blue-2)', color: '#fff', padding: '1px 6px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                    On
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.4 }}>
+                {flag.description}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

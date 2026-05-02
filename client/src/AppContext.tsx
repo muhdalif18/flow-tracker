@@ -1,6 +1,20 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+﻿import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 import type { Flow, ActiveTab, TestStep } from './types';
 import { api } from './api';
+
+const LS_EXPANDED = 'ft_expanded';
+
+function loadExpanded(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_EXPANDED);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function saveExpanded(s: Set<string>) {
+  try { localStorage.setItem(LS_EXPANDED, JSON.stringify([...s])); } catch {}
+}
 
 interface AppState {
   flows: Flow[];
@@ -8,6 +22,9 @@ interface AppState {
   activeTab: ActiveTab;
   expanded: Set<string>;
   loading: boolean;
+  searchQuery: string;
+  bulkSelected: Set<string>;
+  highlightModuleId: string | null;
 }
 
 type Action =
@@ -15,7 +32,12 @@ type Action =
   | { type: 'SET_ACTIVE'; id: string | null }
   | { type: 'SET_TAB'; tab: ActiveTab }
   | { type: 'TOGGLE_EXPAND'; id: string }
-  | { type: 'SET_LOADING'; v: boolean };
+  | { type: 'SET_LOADING'; v: boolean }
+  | { type: 'SET_SEARCH'; q: string }
+  | { type: 'TOGGLE_BULK'; id: string }
+  | { type: 'CLEAR_BULK' }
+  | { type: 'SET_BULK'; ids: Set<string> }
+  | { type: 'SET_HIGHLIGHT_MOD'; id: string | null };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -28,17 +50,29 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_ACTIVE':  return { ...state, activeFlowId: action.id, activeTab: 'diagram' };
     case 'SET_TAB':     return { ...state, activeTab: action.tab };
     case 'SET_LOADING': return { ...state, loading: action.v };
+    case 'SET_SEARCH':  return { ...state, searchQuery: action.q };
     case 'TOGGLE_EXPAND': {
       const next = new Set(state.expanded);
       next.has(action.id) ? next.delete(action.id) : next.add(action.id);
+      saveExpanded(next);
       return { ...state, expanded: next };
     }
+    case 'TOGGLE_BULK': {
+      const next = new Set(state.bulkSelected);
+      next.has(action.id) ? next.delete(action.id) : next.add(action.id);
+      return { ...state, bulkSelected: next };
+    }
+    case 'CLEAR_BULK':  return { ...state, bulkSelected: new Set() };
+    case 'SET_BULK':    return { ...state, bulkSelected: action.ids };
+    case 'SET_HIGHLIGHT_MOD': return { ...state, highlightModuleId: action.id };
     default: return state;
   }
 }
 
 const init: AppState = {
-  flows: [], activeFlowId: null, activeTab: 'diagram', expanded: new Set(), loading: true,
+  flows: [], activeFlowId: null, activeTab: 'diagram',
+  expanded: loadExpanded(), loading: true,
+  searchQuery: '', bulkSelected: new Set(), highlightModuleId: null,
 };
 
 interface AppContextValue {
@@ -48,6 +82,11 @@ interface AppContextValue {
   setActive: (id: string | null) => void;
   setTab: (tab: ActiveTab) => void;
   toggleExpand: (id: string) => void;
+  setSearch: (q: string) => void;
+  toggleBulk: (id: string) => void;
+  clearBulk: () => void;
+  setBulk: (ids: Set<string>) => void;
+  setHighlightModule: (id: string | null) => void;
   createFlow: (name: string, desc: string, group?: string) => Promise<void>;
   updateFlow: (id: string, data: { name?: string; group_name?: string }) => Promise<void>;
   deleteFlow: (id: string) => Promise<void>;
@@ -63,6 +102,7 @@ interface AppContextValue {
   updateStep: (id: string, data: Partial<TestStep>) => Promise<void>;
   deleteStep: (id: string) => Promise<void>;
   copyStep: (stepId: string, targetScenarioId: string) => Promise<void>;
+  bulkUpdateSteps: (ids: string[], data: Partial<TestStep>) => Promise<void>;
   uploadImage: (file: File) => Promise<string>;
 }
 
@@ -112,7 +152,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateStep = useCallback(async (id: string, data: Partial<TestStep>) => { await api.updateStep(id, data); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const deleteStep = useCallback(async (id: string) => { await api.deleteStep(id); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const copyStep   = useCallback(async (stepId: string, targetScenarioId: string) => { await api.copyStep(stepId, targetScenarioId); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
-  const uploadImage    = useCallback(async (file: File) => { const { url } = await api.uploadImage(file); return url; }, []);
+  const uploadImage = useCallback(async (file: File) => { const { url } = await api.uploadImage(file); return url; }, []);
+
+  const bulkUpdateSteps = useCallback(async (ids: string[], data: Partial<TestStep>) => {
+    await Promise.all(ids.map(id => api.updateStep(id, data)));
+    await loadFlows(state.activeFlowId);
+  }, [loadFlows, state.activeFlowId]);
 
   const activeFlow = state.flows.find(f => f.id === state.activeFlowId);
 
@@ -122,9 +167,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActive: id  => dispatch({ type: 'SET_ACTIVE', id }),
       setTab:    tab => dispatch({ type: 'SET_TAB',    tab }),
       toggleExpand: id => dispatch({ type: 'TOGGLE_EXPAND', id }),
+      setSearch: q   => dispatch({ type: 'SET_SEARCH', q }),
+      toggleBulk: id => dispatch({ type: 'TOGGLE_BULK', id }),
+      clearBulk:  () => dispatch({ type: 'CLEAR_BULK' }),
+      setBulk: ids   => dispatch({ type: 'SET_BULK', ids }),
+      setHighlightModule: id => dispatch({ type: 'SET_HIGHLIGHT_MOD', id }),
       createFlow, updateFlow, deleteFlow, addModule, deleteModule, moveModule,
       addScenario, updateScenario, deleteScenario, moveScenario,
-      addStep, updateStep, deleteStep, copyStep, moveStep, uploadImage,
+      addStep, updateStep, deleteStep, copyStep, moveStep,
+      bulkUpdateSteps, uploadImage,
     }}>
       {children}
     </Ctx.Provider>

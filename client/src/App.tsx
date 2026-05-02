@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { AppProvider, useApp } from "./AppContext";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LoginPage } from "./components/LoginPage";
@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { FlowDiagram } from "./components/FlowDiagram";
 import { ScenariosView } from "./components/ScenariosView";
 import { BLIDDashboard } from "./components/BLIDDashboard";
+import OverviewDashboard from "./components/OverviewDashboard";
 import { AdminPanel } from "./components/AdminPanel";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { exportReport, exportExcel } from "./exportReport";
@@ -320,6 +321,145 @@ function AddModuleModal({
   );
 }
 
+function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<typeof useApp>['activeFlow']>; onClose: () => void }) {
+  const { state } = useApp();
+  const [inclFailed,  setInclFailed]  = useState(false);
+  const [useGroup,    setUseGroup]    = useState(false);
+  const [format, setFormat] = useState<'html' | 'excel'>('html');
+
+  const groupName   = flow.group_name?.trim();
+  const groupFlows  = groupName ? state.flows.filter(f => f.group_name?.trim() === groupName) : [flow];
+  const hasGroup    = groupFlows.length > 1;
+  const targetFlows = useGroup && hasGroup ? groupFlows : [flow];
+
+  const totalMods  = targetFlows.reduce((n, f) => n + f.modules.length, 0);
+  const totalSc    = targetFlows.reduce((n, f) => f.modules.reduce((n2, m) => n2 + m.scenarios.length, n), 0);
+  const totalSteps = targetFlows.reduce((n, f) => f.modules.reduce((n2, m) => m.scenarios.reduce((n3, s) => n3 + s.steps.length, n2), n), 0);
+
+  const doExport = () => {
+    const target = useGroup && hasGroup ? groupFlows : flow;
+    if (format === 'html') {
+      exportReport(target, { onlyFailed: inclFailed });
+    } else {
+      exportExcel(useGroup && hasGroup
+        ? { ...flow, name: groupName!, modules: groupFlows.flatMap(f => f.modules) } as typeof flow
+        : flow
+      );
+    }
+    onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="rp-modal" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="rp-header">
+          <div className="rp-header-left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span className="rp-title">Export Report</span>
+          </div>
+          <button className="rp-close" onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div className="rp-body">
+          {/* Source */}
+          <div className="rp-field">
+            <div className="rp-field-label">Source</div>
+            <div className="rp-source-box">
+              <div className="rp-source-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+              </div>
+              <div className="rp-source-info">
+                <span className="rp-source-name">{useGroup && hasGroup ? groupName : flow.name}</span>
+                <span className="rp-source-meta">
+                  {useGroup && hasGroup
+                    ? `${groupFlows.length} flows · ${totalMods} modules`
+                    : `${flow.group_name ? flow.group_name + ' · ' : ''}${flow.modules.length} modules`}
+                </span>
+              </div>
+            </div>
+            {hasGroup && (
+              <label className="rp-option-row" style={{ marginTop: 8 }}>
+                <input type="checkbox" checked={useGroup} onChange={e => setUseGroup(e.target.checked)} />
+                <div>
+                  <span className="rp-option-text">Include all flows in group</span>
+                  <span className="rp-option-sub">{groupFlows.map(f => f.name).join(', ')}</span>
+                </div>
+              </label>
+            )}
+          </div>
+
+          {/* Format */}
+          <div className="rp-field">
+            <div className="rp-field-label">Format</div>
+            <div className="rp-format-row">
+              <button className={`rp-format-card ${format === 'html' ? 'on' : ''}`} onClick={() => setFormat('html')}>
+                <div className="rp-format-icon rp-format-icon--html">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                </div>
+                <span className="rp-format-name">HTML Report</span>
+                <span className="rp-format-sub">Print-ready, shareable</span>
+              </button>
+              <button className={`rp-format-card ${format === 'excel' ? 'on' : ''}`} onClick={() => setFormat('excel')}>
+                <div className="rp-format-icon rp-format-icon--excel">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>
+                  </svg>
+                </div>
+                <span className="rp-format-name">Excel (.xlsx)</span>
+                <span className="rp-format-sub">3 sheets: Summary, Scenarios, Steps</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Options — HTML only */}
+          {format === 'html' && (
+            <div className="rp-field">
+              <div className="rp-field-label">Options</div>
+              <label className="rp-option-row">
+                <input type="checkbox" checked={inclFailed} onChange={e => setInclFailed(e.target.checked)} />
+                <div>
+                  <span className="rp-option-text">Failed scenarios only</span>
+                  <span className="rp-option-sub">Exclude passed and untested scenarios from the report</span>
+                </div>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="rp-footer">
+          <div className="rp-footer-stats">
+            <span>{totalMods} module{totalMods !== 1 ? 's' : ''}</span>
+            <span className="rp-dot" />
+            <span>{totalSc} scenario{totalSc !== 1 ? 's' : ''}</span>
+            <span className="rp-dot" />
+            <span>{totalSteps} step{totalSteps !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="rp-footer-actions">
+            <button className="btn-cancel" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={doExport}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MainPanel({
   dark,
   onToggleTheme,
@@ -327,11 +467,13 @@ function MainPanel({
   dark: boolean;
   onToggleTheme: () => void;
 }) {
-  const { activeFlow, state, setTab } = useApp();
+  const { activeFlow, state, setTab, setSearch } = useApp();
   const { isOwner, isAdmin } = useAuth();
-  const [showAddMod,   setShowAddMod]   = useState(false);
-  const [showExport,   setShowExport]   = useState(false);
-  const [showAdmin,    setShowAdmin]    = useState(false);
+  const [showAddMod,     setShowAddMod]     = useState(false);
+  const [showExport,     setShowExport]     = useState(false);
+  const [showAdmin,      setShowAdmin]      = useState(false);
+  const [showPreview,    setShowPreview]    = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   if (state.loading) {
     return (
@@ -365,10 +507,28 @@ function MainPanel({
           <svg width="14" height="14" color="var(--ink-4)">
             <use href="#i-search" />
           </svg>
-          <input placeholder="Search flows…" readOnly />
+          <input
+            ref={searchRef}
+            placeholder="Search modules, BLIDs, steps…"
+            value={state.searchQuery}
+            onChange={e => { setSearch(e.target.value); if (activeFlow) setTab('scenarios'); }}
+            onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); if (searchRef.current) searchRef.current.blur(); } }}
+          />
+          {state.searchQuery && (
+            <button className="search-clear" onClick={() => setSearch('')} title="Clear search">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            </button>
+          )}
         </div>
 
         <div className="top-tabs">
+          <button
+            className={`ttab ${state.activeTab === "overview" ? "on" : ""}`}
+            onClick={() => setTab("overview")}
+            disabled={!activeFlow}
+          >
+            Overview
+          </button>
           <button
             className={`ttab ${state.activeTab === "diagram" ? "on" : ""}`}
             onClick={() => setTab("diagram")}
@@ -422,101 +582,14 @@ function MainPanel({
               + Module
             </button>
           )}
-          <div style={{ position: "relative" }}>
-            <button
-              className="btn-export"
-              onClick={() => activeFlow && setShowExport((v) => !v)}
-              disabled={!activeFlow}
-            >
-              <svg>
-                <use href="#i-download" />
-              </svg>
-              Export Report
-              <svg
-                style={{ width: 10, height: 10, marginLeft: 2 }}
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 6l4 4 4-4" />
-              </svg>
-            </button>
-            {showExport && activeFlow && (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "calc(100% + 6px)",
-                  background: "var(--panel)",
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  boxShadow: "var(--shadow-lg)",
-                  zIndex: 99,
-                  minWidth: 160,
-                  overflow: "hidden",
-                }}
-                onMouseLeave={() => setShowExport(false)}
-              >
-                <button
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    width: "100%",
-                    padding: "10px 14px",
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "var(--ink)",
-                    textAlign: "left",
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "var(--hover)")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "none")
-                  }
-                  onClick={() => {
-                    exportReport(activeFlow);
-                    setShowExport(false);
-                  }}
-                >
-                  🌐 HTML Report
-                </button>
-                <button
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    width: "100%",
-                    padding: "10px 14px",
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    color: "var(--ink)",
-                    textAlign: "left",
-                  }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "var(--hover)")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = "none")
-                  }
-                  onClick={() => {
-                    exportExcel(activeFlow);
-                    setShowExport(false);
-                  }}
-                >
-                  📊 Excel (.xlsx)
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            className="btn-export"
+            onClick={() => activeFlow && setShowPreview(true)}
+            disabled={!activeFlow}
+          >
+            <svg><use href="#i-download" /></svg>
+            Export Report
+          </button>
         </div>
       </div>
 
@@ -533,9 +606,10 @@ function MainPanel({
           </div>
         ) : (
           <>
-            {state.activeTab === "diagram" && <FlowDiagram />}
-            {state.activeTab === "scenarios" && <ScenariosView />}
-            {state.activeTab === "blid" && <BLIDDashboard />}
+            {state.activeTab === "overview"   && <OverviewDashboard />}
+            {state.activeTab === "diagram"    && <FlowDiagram />}
+            {state.activeTab === "scenarios"  && <ScenariosView />}
+            {state.activeTab === "blid"       && <BLIDDashboard />}
           </>
         )}
       </div>
@@ -547,6 +621,9 @@ function MainPanel({
         />
       )}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+      {showPreview && activeFlow && (
+        <ReportPreviewModal flow={activeFlow} onClose={() => setShowPreview(false)} />
+      )}
     </main>
   );
 }

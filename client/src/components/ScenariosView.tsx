@@ -1,22 +1,80 @@
-import { useState, useRef } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { useApp } from "../AppContext";
 import { useAuth } from "../AuthContext";
+import EvidenceModal from "./EvidenceModal";
 import {
   modStatus,
   modStats,
   isGated,
   STATUS_META,
-  today,
   scenarioStatus,
   scenarioIssueType,
 } from "../utils";
 import { useConfirm } from "./ConfirmModal";
 import type { Flow, Module, Scenario, TestStep } from "../types";
 
-// ── Image helpers (multi-screenshot support) ──────────────────────────────────
+// â"€â"€ Image helpers (multi-screenshot support) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 import { parseImages, serializeImages } from "./diagnosticsHelpers";
 
-// ── Inline SVG micro-icons (no sprite dependency) ─────────────────────────────
+const LEGACY_DATE_RE = /^(\d{1,2})\s([A-Za-z]{3})\s(\d{4})$/;
+const MONTH_IDX: Record<string, number> = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+};
+
+function toIsoDateInputValue(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+  const m = v.match(LEGACY_DATE_RE);
+  if (!m) return "";
+
+  const day = Number(m[1]);
+  const mon = MONTH_IDX[m[2].toLowerCase()];
+  const year = Number(m[3]);
+  if (!Number.isInteger(day) || mon === undefined || !Number.isInteger(year)) {
+    return "";
+  }
+
+  const dt = new Date(Date.UTC(year, mon, day));
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== mon ||
+    dt.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return `${year.toString().padStart(4, "0")}-${(mon + 1).toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+}
+
+function isoToday(): string {
+  const dt = new Date();
+  const y = dt.getFullYear();
+  const m = (dt.getMonth() + 1).toString().padStart(2, "0");
+  const d = dt.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function renderDate(value: string): string {
+  const iso = toIsoDateInputValue(value);
+  if (!iso) return value;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return value;
+  return `${d.toString().padStart(2, "0")}/${m.toString().padStart(2, "0")}/${y.toString().padStart(4, "0")}`;
+}
+
+// â"€â"€ Inline SVG micro-icons (no sprite dependency) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const IcoChev = () => (
   <svg
     width="11"
@@ -167,14 +225,14 @@ const IcoDoc = () => (
   </svg>
 );
 
-// ── Auto-resize textarea helper ───────────────────────────────────────────────
+// â"€â"€ Auto-resize textarea helper â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function fit(el: HTMLTextAreaElement | null) {
   if (!el) return;
   el.style.height = "auto";
   el.style.height = el.scrollHeight + "px";
 }
 
-// ── Add Scenario Modal ────────────────────────────────────────────────────────
+// â"€â"€ Add Scenario Modal â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function AddScenarioModal({
   moduleId,
   onClose,
@@ -226,7 +284,7 @@ function AddScenarioModal({
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? "Adding…" : "Add Scenario"}
+              {busy ? "Addingâ€¦" : "Add Scenario"}
             </button>
           </div>
         </form>
@@ -235,7 +293,7 @@ function AddScenarioModal({
   );
 }
 
-// ── Copy Step Modal ───────────────────────────────────────────────────────────
+// â"€â"€ Copy Step Modal â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void }) {
   const { state, copyStep } = useApp();
   const { isOwner } = useAuth();
@@ -262,7 +320,7 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
       )
     : allScenarios;
 
-  // Group by flow → module
+  // Group by flow â†' module
   const grouped = myFlows.flatMap(f =>
     f.modules.map(m => ({
       flowName: f.name,
@@ -286,12 +344,12 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
         <h3>Copy Step to Scenario</h3>
 
         {done ? (
-          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ok)', fontWeight: 600, fontSize: 14 }}>✓ Step copied successfully!</div>
+          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ok)', fontWeight: 600, fontSize: 14 }}>Step copied successfully!</div>
         ) : (
           <>
             <input
               autoFocus
-              placeholder="Search scenarios…"
+              placeholder="Search scenariosâ€¦"
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ width: '100%', padding: '8px 11px', border: '1px solid var(--line)', borderRadius: 7, fontFamily: 'var(--sans)', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
@@ -303,7 +361,7 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
               {grouped.map(({ flowName, m, scenarios }) => (
                 <div key={m.id}>
                   <div style={{ padding: '6px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', background: 'var(--hover)', borderBottom: '1px solid var(--line)' }}>
-                    <span style={{ opacity: .6 }}>{flowName} · </span>{m.label} · {m.name}
+                    <span style={{ opacity: .6 }}>{flowName} Â· </span>{m.label} Â· {m.name}
                   </div>
                   {scenarios.map(sc => (
                     <button
@@ -327,7 +385,7 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
             <div className="modal-actions" style={{ marginTop: 12 }}>
               <button type="button" onClick={onClose}>Cancel</button>
               <button type="button" className="btn-primary" onClick={handleCopy} disabled={!selectedId || copying}>
-                {copying ? 'Copying…' : 'Copy Step Here'}
+                {copying ? 'Copyingâ€¦' : 'Copy Step Here'}
               </button>
             </div>
           </>
@@ -337,7 +395,7 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
   );
 }
 
-// ── Step Card ─────────────────────────────────────────────────────────────────
+// â"€â"€ Step Card â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function StepCard({
   step,
   stepNo,
@@ -347,19 +405,21 @@ function StepCard({
   stepNo: number;
   canEdit: boolean;
 }) {
-  const { updateStep, deleteStep, uploadImage } = useApp();
+  const { updateStep, deleteStep, uploadImage, state, toggleBulk } = useApp();
   const { confirm, modal: confirmModal } = useConfirm();
   const [collapsed,      setCollapsed]      = useState(true);
   const [uploading,      setUploading]      = useState(false);
   const [showCopyModal,  setShowCopyModal]  = useState(false);
+  const [evidenceIdx,    setEvidenceIdx]    = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const isBulkSelected = state.bulkSelected.has(step.id);
   const upd = (data: Partial<TestStep>) => updateStep(step.id, data);
   const images = parseImages(step.evidence_image);
 
   const mark = (status: TestStep["status"]) => {
     const d: Partial<TestStep> = { status };
     if ((status === "pass" || status === "fail") && !step.date_tested)
-      d.date_tested = today();
+      d.date_tested = isoToday();
     if (status === "untested") {
       d.issue_type = null;
       d.date_tested = "";
@@ -400,20 +460,39 @@ function StepCard({
   const handleRemoveImg = async (idx: number) => {
     const next = images.filter((_, i) => i !== idx);
     await upd({ evidence_image: next.length ? serializeImages(next) : null });
+    if (next.length === 0) setEvidenceIdx(null);
+    else setEvidenceIdx(i => i !== null ? Math.min(i, next.length - 1) : null);
   };
 
   return (
     <div
-      className={`step-card ${step.status === "pass" ? "step-pass" : step.status === "fail" ? "step-fail" : ""}`}
+      className={`step-card ${step.status === "pass" ? "step-pass" : step.status === "fail" ? "step-fail" : ""} ${isBulkSelected ? "step-bulk-selected" : ""}`}
     >
       {confirmModal}
+      {evidenceIdx !== null && images.length > 0 && (
+        <EvidenceModal
+          images={images}
+          initialIndex={evidenceIdx}
+          onClose={() => setEvidenceIdx(null)}
+          onDelete={canEdit ? handleRemoveImg : undefined}
+          canEdit={canEdit}
+        />
+      )}
 
-      {/* ── Header ── */}
+      {/* â"€â"€ Header â"€â"€ */}
       <div
         className="step-hdr"
         style={{ cursor: "pointer" }}
         onClick={() => setCollapsed((c) => !c)}
       >
+        <input
+          type="checkbox"
+          className="step-bulk-cb"
+          checked={isBulkSelected}
+          onClick={e => e.stopPropagation()}
+          onChange={() => toggleBulk(step.id)}
+          title="Select for bulk action"
+        />
         <svg
           style={{
             width: 12,
@@ -435,7 +514,7 @@ function StepCard({
         <input
           className="step-desc-inp"
           defaultValue={step.description}
-          placeholder="Step description…"
+          placeholder="Step descriptionâ€¦"
           readOnly={!canEdit}
           onClick={(e) => e.stopPropagation()}
           onBlur={
@@ -457,19 +536,30 @@ function StepCard({
         {canEdit && (
           <button
             className="btn-xs btn-danger"
+            title="Delete step"
             onClick={async (e) => {
               e.stopPropagation();
               if (await confirm({ message: "Delete this step?" }))
                 deleteStep(step.id);
             }}
           >
-            ×
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
           </button>
         )}
       </div>
       {showCopyModal && <CopyStepModal step={step} onClose={() => setShowCopyModal(false)} />}
 
-      {/* ── Body ── */}
+      {/* â"€â"€ Body â"€â"€ */}
       {!collapsed && (
         <div className="step-body" onPaste={canEdit ? handlePaste : undefined}>
           {/* Expected result */}
@@ -480,7 +570,7 @@ function StepCard({
               ref={fit}
               rows={2}
               defaultValue={step.expected}
-              placeholder="Describe what should happen…"
+              placeholder="Describe what should happenâ€¦"
               readOnly={!canEdit}
               onInput={(e) => fit(e.currentTarget)}
               onBlur={
@@ -499,13 +589,13 @@ function StepCard({
                     className={`ep-st-btn ${step.status === "pass" ? "ep-pass" : ""}`}
                     onClick={() => mark("pass")}
                   >
-                    ✓ Pass
+                    Pass
                   </button>
                   <button
                     className={`ep-st-btn ${step.status === "fail" ? "ep-fail" : ""}`}
                     onClick={() => mark("fail")}
                   >
-                    ✗ Fail
+                    Fail
                   </button>
                   <button
                     className={`ep-st-btn ${step.status === "untested" ? "ep-nt" : ""}`}
@@ -519,10 +609,10 @@ function StepCard({
                   className={`sst-pill ${step.status === "pass" ? "sst-pill-pass" : step.status === "fail" ? "sst-pill-fail" : "sst-pill-nt"}`}
                 >
                   {step.status === "pass"
-                    ? "✓ PASS"
+                    ? "PASS"
                     : step.status === "fail"
-                      ? "✗ FAIL"
-                      : "— N/T"}
+                      ? "FAIL"
+                      : "N/T"}
                 </span>
               )}
               {step.status === "fail" &&
@@ -579,47 +669,70 @@ function StepCard({
             </div>
           </div>
 
-          {/* Evidence — only when tested */}
+          {/* Evidence â€" only when tested */}
           {step.status !== "untested" && (
             <>
               {/* Meta fields */}
               <div className="step-section">
-                <span className="step-section-label">Evidence Details</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                  {!step.date_tested && (
+                    <span className="step-hint step-hint-warn">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      Date not set
+                    </span>
+                  )}
+                  {step.status === 'fail' && !step.ado_ticket && (
+                    <span className="step-hint step-hint-info">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      ADO ticket recommended for failures
+                    </span>
+                  )}
+                </div>
                 <div className="step-meta-row">
-                  <input
-                    className="step-meta-inp"
-                    defaultValue={step.date_tested}
-                    placeholder="Date tested"
-                    readOnly={!canEdit}
-                    onBlur={
-                      canEdit
-                        ? (e) => upd({ date_tested: e.target.value })
-                        : undefined
-                    }
-                  />
-                  <input
-                    className="step-meta-inp"
-                    defaultValue={step.ado_ticket}
-                    placeholder="ADO ticket #"
-                    readOnly={!canEdit}
-                    onBlur={
-                      canEdit
-                        ? (e) => upd({ ado_ticket: e.target.value })
-                        : undefined
-                    }
-                  />
-                  <input
-                    className="step-meta-inp step-meta-url"
-                    defaultValue={step.evidence_url}
-                    placeholder="Evidence URL"
-                    readOnly={!canEdit}
-                    type="url"
-                    onBlur={
-                      canEdit
-                        ? (e) => upd({ evidence_url: e.target.value })
-                        : undefined
-                    }
-                  />
+                  <label className="step-meta-field">
+                    <span className="step-meta-label">Date Tested</span>
+                    <input
+                      className={`step-meta-inp step-meta-date ${!step.date_tested ? 'step-meta-inp--warn' : ''}`}
+                      type="date"
+                      defaultValue={toIsoDateInputValue(step.date_tested)}
+                      placeholder="Date tested"
+                      readOnly={!canEdit}
+                      onBlur={
+                        canEdit
+                          ? (e) => upd({ date_tested: e.target.value })
+                          : undefined
+                      }
+                    />
+                  </label>
+                  <label className="step-meta-field">
+                    <span className="step-meta-label">ADO Ticket</span>
+                    <input
+                      className={`step-meta-inp ${step.status === 'fail' && !step.ado_ticket ? 'step-meta-inp--info' : ''}`}
+                      defaultValue={step.ado_ticket}
+                      placeholder="ADO ticket #"
+                      readOnly={!canEdit}
+                      onBlur={
+                        canEdit
+                          ? (e) => upd({ ado_ticket: e.target.value })
+                          : undefined
+                      }
+                    />
+                  </label>
+                  <label className="step-meta-field step-meta-url-field">
+                    <span className="step-meta-label">Evidence URL</span>
+                    <input
+                      className="step-meta-inp step-meta-url"
+                      defaultValue={step.evidence_url}
+                      placeholder="Evidence URL"
+                      readOnly={!canEdit}
+                      type="url"
+                      onBlur={
+                        canEdit
+                          ? (e) => upd({ evidence_url: e.target.value })
+                          : undefined
+                      }
+                    />
+                  </label>
                 </div>
               </div>
 
@@ -631,7 +744,7 @@ function StepCard({
                   ref={fit}
                   rows={2}
                   defaultValue={step.remarks}
-                  placeholder="Describe the actual outcome…"
+                  placeholder="Describe the actual outcomeâ€¦"
                   readOnly={!canEdit}
                   onInput={(e) => fit(e.currentTarget)}
                   onBlur={
@@ -651,14 +764,26 @@ function StepCard({
                       <img
                         src={url}
                         alt={`screenshot ${idx + 1}`}
-                        onClick={() => window.open(url)}
+                        onClick={() => setEvidenceIdx(idx)}
+                        style={{ cursor: 'zoom-in' }}
                       />
                       {canEdit && (
                         <button
                           className="step-photo-del"
+                          title="Remove screenshot"
                           onClick={() => handleRemoveImg(idx)}
                         >
-                          ×
+                          <svg
+                            width="9"
+                            height="9"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          >
+                            <path d="M4 4l8 8M12 4l-8 8" />
+                          </svg>
                         </button>
                       )}
                     </div>
@@ -667,9 +792,9 @@ function StepCard({
                     <>
                       <label
                         className={`step-photo-add ${uploading ? "step-photo-add--loading" : ""}`}
-                        title={uploading ? "Uploading…" : "Browse file"}
+                        title={uploading ? "Uploading…" : "Browse image file"}
                       >
-                        <span>{uploading ? "…" : "+"}</span>
+                        <span>{uploading ? "â€¦" : "+"}</span>
                         <input
                           ref={fileRef}
                           type="file"
@@ -681,10 +806,29 @@ function StepCard({
                       <div
                         className={`step-paste-zone ${uploading ? "step-paste-zone--loading" : ""}`}
                         tabIndex={0}
+                        onMouseEnter={(e) => e.currentTarget.focus()}
                         onPaste={handlePaste}
-                        title="Click here then Ctrl+V to paste an image"
+                        title={uploading ? "Uploading…" : "Paste image (Ctrl+V)"}
+                        aria-label={uploading ? "Uploading image" : "Paste image from clipboard"}
                       >
-                        {uploading ? "Uploading…" : "Ctrl+V to paste"}
+                        {uploading ? (
+                          "…"
+                        ) : (
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <rect x="5" y="5" width="8" height="9" rx="1" />
+                            <path d="M3 11H2a1 1 0 01-1-1V2a1 1 0 011-1h8a1 1 0 011 1v1" />
+                          </svg>
+                        )}
                       </div>
                     </>
                   )}
@@ -698,7 +842,49 @@ function StepCard({
   );
 }
 
-// ── Expand Panel (step list) ──────────────────────────────────────────────────
+// â"€â"€ Bulk Action Bar â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+function BulkActionBar() {
+  const { state, clearBulk, bulkUpdateSteps } = useApp();
+  const count = state.bulkSelected.size;
+  if (count === 0) return null;
+
+  const ids = [...state.bulkSelected];
+  const isoToday_ = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
+  const bulk = async (data: Partial<TestStep>) => { await bulkUpdateSteps(ids, data); clearBulk(); };
+
+  return (
+    <div className="bulk-bar">
+      <span className="bulk-count">{count} step{count !== 1 ? 's' : ''} selected</span>
+      <div className="bulk-actions">
+        <button className="bulk-btn bulk-pass" onClick={() => bulk({ status: 'pass', date_tested: isoToday_() })}>
+          ✓ Mark Pass
+        </button>
+        <button className="bulk-btn bulk-fail" onClick={() => bulk({ status: 'fail', date_tested: isoToday_() })}>
+          ✗ Mark Fail
+        </button>
+        <button className="bulk-btn bulk-reset" onClick={() => bulk({ status: 'untested', issue_type: null, date_tested: '' })}>
+          Reset
+        </button>
+        <button className="bulk-btn bulk-date" onClick={() => {
+          const d = prompt('Set date (YYYY-MM-DD):', isoToday_());
+          if (d) bulk({ date_tested: d });
+        }}>
+          📅 Set Date
+        </button>
+        <button className="bulk-btn bulk-ado" onClick={() => {
+          const t = prompt('Set ADO ticket number:');
+          if (t !== null) bulk({ ado_ticket: t });
+        }}>
+          🎫 Set ADO
+        </button>
+      </div>
+      <button className="bulk-cancel" onClick={clearBulk} title="Clear selection">✕</button>
+    </div>
+  );
+}
+
+// â"€â"€ Expand Panel (step list) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   const { addStep, deleteScenario, moveStep } = useApp();
   const { confirm, modal: confirmModal } = useConfirm();
@@ -727,15 +913,19 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
       {confirmModal}
       {sc.steps.length === 0 && !showAdd && (
         <div className="sc-empty">
-          {canEdit ? (
-            <>
-              No steps yet —{" "}
-              <button className="link-btn" onClick={() => setShowAdd(true)}>
-                add first step
-              </button>
-            </>
-          ) : (
-            "No steps yet."
+          <div className="sc-empty-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </div>
+          <span className="sc-empty-text">No steps yet</span>
+          {canEdit && (
+            <button className="sc-empty-btn" onClick={() => setShowAdd(true)}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add first step
+            </button>
           )}
         </div>
       )}
@@ -807,7 +997,7 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
                 Cancel
               </button>
               <button type="submit" className="btn-primary" disabled={adding}>
-                {adding ? "Adding…" : "Add Step"}
+                {adding ? "Addingâ€¦" : "Add Step"}
               </button>
             </div>
           </form>
@@ -851,7 +1041,7 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
   );
 }
 
-// ── Scenario Row ──────────────────────────────────────────────────────────────
+// â"€â"€ Scenario Row â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function ScenarioRow({
   sc, canEdit, isDragOver,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -873,7 +1063,7 @@ function ScenarioRow({
   const testedStep = [...sc.steps]
     .reverse()
     .find((s) => s.status !== "untested");
-  const metaDate = testedStep?.date_tested || "";
+  const metaDate = renderDate(testedStep?.date_tested || "");
   const metaAdos = [...new Set(sc.steps.map((s) => s.ado_ticket).filter(Boolean))] as string[];
 
   return (
@@ -908,13 +1098,13 @@ function ScenarioRow({
             <div className="step-count-badge">
               {sc.steps.filter((s) => s.status === "pass").length > 0 && (
                 <span style={{ color: "var(--ok)" }}>
-                  {sc.steps.filter((s) => s.status === "pass").length}✓
+                  {sc.steps.filter((s) => s.status === "pass").length} pass
                 </span>
               )}
               {sc.steps.filter((s) => s.status === "fail").length > 0 && (
                 <span style={{ color: "var(--bad)" }}>
                   {" "}
-                  {sc.steps.filter((s) => s.status === "fail").length}✗
+                  {sc.steps.filter((s) => s.status === "fail").length} fail
                 </span>
               )}{" "}
               {sc.steps.length} step{sc.steps.length !== 1 ? "s" : ""}
@@ -946,7 +1136,7 @@ function ScenarioRow({
           {metaDate ? (
             <span className="sc-meta-date">{metaDate}</span>
           ) : (
-            <span className="sc-meta-none">—</span>
+            <span className="sc-meta-none">-</span>
           )}
         </td>
 
@@ -956,12 +1146,12 @@ function ScenarioRow({
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {metaAdos.map((ado) => (
                 <span key={ado} className="sc-meta-ado">
-                  {ado.startsWith("http") ? "🔗 link" : ado}
+                  {ado.startsWith("http") ? "Link" : ado}
                 </span>
               ))}
             </div>
           ) : (
-            <span className="sc-meta-none">—</span>
+            <span className="sc-meta-none">-</span>
           )}
         </td>
 
@@ -987,7 +1177,7 @@ function ScenarioRow({
   );
 }
 
-// ── Module Card ───────────────────────────────────────────────────────────────
+// â"€â"€ Module Card â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
   const { deleteModule, moveModule, moveScenario } = useApp();
   const { isOwner } = useAuth();
@@ -1001,7 +1191,8 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
   const st = modStatus(mod);
   const sm = STATUS_META[st];
   const ms = modStats(mod);
-  const gated = isGated(flow, flow.modules.indexOf(mod));
+  const modIdxInFlow = flow.modules.findIndex(m => m.id === mod.id);
+  const gated = modIdxInFlow >= 0 && isGated(flow, modIdxInFlow);
 
   // Border colour per status
   const borderC: Record<string, string> = {
@@ -1020,7 +1211,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
   const failPct = Math.round((ms.fail / total) * 100);
   const ntPct = 100 - passPct - failPct;
 
-  // eDS → blue, HITS → purple
+  // eDS â†' blue, HITS â†' purple
   const sideC = mod.side === "eDS" ? "#1d4ed8" : "#7c3aed";
   const sideBg =
     mod.side === "eDS" ? "rgba(29,78,216,.1)" : "rgba(124,58,237,.1)";
@@ -1031,10 +1222,11 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
     <>
       {confirmModal}
       <div
+        id={`mod-${mod.id}`}
         className={`mod-section ${collapsed ? "mod-collapsed" : ""}`}
         style={{ borderLeftColor: borderC[st] ?? "#e2e8f0" }}
       >
-        {/* ── Header (click to collapse) ── */}
+        {/* â"€â"€ Header (click to collapse) â"€â"€ */}
         <div
           className="mod-header"
           onClick={(e) => {
@@ -1110,7 +1302,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
             {/* Status badge */}
             <span className={`st-badge ${sm.cls}`}>{sm.label}</span>
 
-            {/* Action buttons — owner only */}
+            {/* Action buttons â€" owner only */}
             {canEdit && (
               <>
                 <button className="sc-add-btn" onClick={() => setShowAdd(true)}>
@@ -1121,7 +1313,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
                   className="mod-ico-btn"
                   title="Move up"
                   onClick={async () => {
-                    const idx = flow.modules.indexOf(mod);
+                    const idx = modIdxInFlow;
                     if (idx <= 0) return;
                     if (await confirm({ message: `Move "${mod.name}" above "${flow.modules[idx - 1].name}"?`, confirmLabel: 'Move', danger: false }))
                       moveModule(flow.id, mod.id, -1);
@@ -1133,8 +1325,8 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
                   className="mod-ico-btn"
                   title="Move down"
                   onClick={async () => {
-                    const idx = flow.modules.indexOf(mod);
-                    if (idx >= flow.modules.length - 1) return;
+                    const idx = modIdxInFlow;
+                    if (idx < 0 || idx >= flow.modules.length - 1) return;
                     if (await confirm({ message: `Move "${mod.name}" below "${flow.modules[idx + 1].name}"?`, confirmLabel: 'Move', danger: false }))
                       moveModule(flow.id, mod.id, 1);
                   }}
@@ -1160,18 +1352,18 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
           </div>
         </div>
 
-        {/* ── Gated banner ── */}
+        {/* â"€â"€ Gated banner â"€â"€ */}
         {gated && (
           <div className="gate-banner-v2">
             <IcoLock />
             <span>
-              <strong>Gated</strong> — a previous module has a Blocker issue.
+              <strong>Gated</strong> - a previous module has a Blocker issue.
               Resolve it before testing here.
             </span>
           </div>
         )}
 
-        {/* ── Scenarios table or empty state ── */}
+        {/* â"€â"€ Scenarios table or empty state â"€â"€ */}
         {mod.scenarios.length === 0 ? (
           <div className="mod-empty">
             <div className="mod-empty-ico">
@@ -1196,7 +1388,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
           </div>
         ) : (
           <table className="sc-table">
-            <thead>
+            <thead className="sc-thead-sticky">
               <tr>
                 <th style={{ width: 24 }} />
                 <th style={{ width: 90 }}>BLID</th>
@@ -1248,10 +1440,48 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
   );
 }
 
-// ── ScenariosView ─────────────────────────────────────────────────────────────
+// â"€â"€ ScenariosView â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 export function ScenariosView() {
-  const { activeFlow } = useApp();
+  const { activeFlow, state, setHighlightModule } = useApp();
+
+  useEffect(() => {
+    const id = state.highlightModuleId;
+    if (!id) return;
+    const el = document.getElementById(`mod-${id}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('mod-highlight');
+      const t = setTimeout(() => { el.classList.remove('mod-highlight'); setHighlightModule(null); }, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [state.highlightModuleId]);
   if (!activeFlow) return null;
+
+  const q = state.searchQuery.toLowerCase().trim();
+  const filteredMods = !q
+    ? activeFlow.modules
+    : activeFlow.modules
+        .map(mod => {
+          if (
+            mod.name.toLowerCase().includes(q) ||
+            mod.label.toLowerCase().includes(q) ||
+            mod.note?.toLowerCase().includes(q)
+          ) return mod;
+          const filteredScenarios = mod.scenarios.filter(sc =>
+            sc.blid.toLowerCase().includes(q) ||
+            sc.description.toLowerCase().includes(q) ||
+            sc.steps.some(s =>
+              s.description.toLowerCase().includes(q) ||
+              s.expected?.toLowerCase().includes(q) ||
+              s.ado_ticket?.toLowerCase().includes(q) ||
+              s.remarks?.toLowerCase().includes(q)
+            )
+          );
+          if (!filteredScenarios.length) return null;
+          return { ...mod, scenarios: filteredScenarios };
+        })
+        .filter(Boolean) as typeof activeFlow.modules;
+
   if (!activeFlow.modules.length) {
     return (
       <div className="empty-state">
@@ -1261,9 +1491,21 @@ export function ScenariosView() {
       </div>
     );
   }
+
+  if (q && !filteredMods.length) {
+    return (
+      <div className="empty-state">
+        <div className="es-icon">🔍</div>
+        <div className="es-title">No results for "{state.searchQuery}"</div>
+        <div className="es-sub">Try a different module name, BLID, or step description</div>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {activeFlow.modules.map((mod) => (
+    <div style={{ position: 'relative' }}>
+      <BulkActionBar />
+      {filteredMods.map((mod) => (
         <ModuleCard key={mod.id} mod={mod} flow={activeFlow} />
       ))}
     </div>
