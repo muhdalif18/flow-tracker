@@ -259,7 +259,7 @@ function AddScenarioModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-        <h3>Add Scenario</h3>
+        <h3>Add BLID</h3>
         <form onSubmit={submit}>
           <label>
             BLID <span className="label-hint">(from URS)</span>
@@ -272,7 +272,7 @@ function AddScenarioModal({
             className="mono-input"
             required
           />
-          <label>Scenario description</label>
+          <label>Description</label>
           <input
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
@@ -284,7 +284,7 @@ function AddScenarioModal({
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? "Addingâ€¦" : "Add Scenario"}
+              {busy ? "Adding…" : "Add BLID"}
             </button>
           </div>
         </form>
@@ -1300,14 +1300,14 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
             </div>
 
             {/* Status badge */}
-            <span className={`st-badge ${sm.cls}`}>{sm.label}</span>
+            <span className={`st-badge ${sm.cls}`}>{sm.label === "No Scenarios" ? "No BLIDs" : sm.label}</span>
 
             {/* Action buttons â€" owner only */}
             {canEdit && (
               <>
                 <button className="sc-add-btn" onClick={() => setShowAdd(true)}>
                   <IcoPlus />
-                  Scenario
+                  BLID
                 </button>
                 <button
                   className="mod-ico-btn"
@@ -1369,11 +1369,11 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
             <div className="mod-empty-ico">
               <IcoDoc />
             </div>
-            <div className="mod-empty-title">No scenarios yet</div>
+            <div className="mod-empty-title">No BLIDs yet</div>
             <div className="mod-empty-sub">
               {canEdit
-                ? "Add scenarios from the URS document to begin tracking this module."
-                : "No scenarios have been added to this module yet."}
+                ? "Add BLIDs from the URS document to begin tracking this module."
+                : "No BLIDs have been added to this module yet."}
             </div>
             {canEdit && (
               <button
@@ -1382,7 +1382,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
                 onClick={() => setShowAdd(true)}
               >
                 <IcoPlus />
-                Add first scenario
+                Add BLID
               </button>
             )}
           </div>
@@ -1392,7 +1392,7 @@ function ModuleCard({ mod, flow }: { mod: Module; flow: Flow }) {
               <tr>
                 <th style={{ width: 24 }} />
                 <th style={{ width: 90 }}>BLID</th>
-                <th>Scenario</th>
+                <th>Description</th>
                 <th style={{ width: 85, textAlign: "center" }}>Status</th>
                 <th style={{ width: 115 }}>Date Tested</th>
                 <th style={{ width: 120 }}>ADO Ticket</th>
