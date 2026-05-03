@@ -583,7 +583,7 @@ app.post('/api/modules/:moduleId/scenarios', async (req: AuthRequest, res) => {
 app.put('/api/scenarios/:id', async (req: AuthRequest, res) => {
   if (!canEdit(await getFlowOwnerByScenario(req.params.id), req.user!.userId, req.user!.role))
     return res.status(403).json({ error: 'You can only edit scenarios in your own flows' });
-  const allowed = ['status','issue_type','date_tested','ado_ticket','evidence_url','evidence_image','remarks'] as const;
+  const allowed = ['description','blid','status','issue_type','date_tested','ado_ticket','evidence_url','evidence_image','remarks'] as const;
   const updates = Object.entries(req.body).filter(([k]) => (allowed as readonly string[]).includes(k));
   if (updates.length) {
     const set = updates.map(([k], i) => `${k} = $${i + 1}`).join(', ');
