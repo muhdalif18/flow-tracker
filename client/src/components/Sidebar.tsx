@@ -235,8 +235,8 @@ function GroupSection({ name, flows }: { name: string; flows: Flow[] }) {
 export function Sidebar() {
   const { state, setTab, createFlow } = useApp();
   const { user, logout } = useAuth();
-  const [showForm,    setShowForm]    = useState(false);
-  const [showChgPw,   setShowChgPw]  = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [showChgPw, setShowChgPw] = useState(false);
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [groupMode, setGroupMode] = useState<
@@ -276,7 +276,7 @@ export function Sidebar() {
         />
         <div>
           <div className="sb-title">Flow Tracker</div>
-          <div className="sb-sub">V2.5.0-STABLE</div>
+          <div className="sb-sub">V2.5.0-STABLE - by: SyedAlif</div>
         </div>
       </div>
 
@@ -391,12 +391,26 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="side-foot">
-        <div style={{ padding: "6px 12px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            padding: "6px 12px 8px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
           <div
             style={{
-              width: 28, height: 28, borderRadius: 7, background: "var(--blue-2)",
-              display: "grid", placeItems: "center", color: "#fff",
-              fontWeight: 700, fontSize: 12, flexShrink: 0,
+              width: 28,
+              height: 28,
+              borderRadius: 7,
+              background: "var(--blue-2)",
+              display: "grid",
+              placeItems: "center",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 12,
+              flexShrink: 0,
             }}
           >
             {user?.username[0].toUpperCase()}
@@ -404,8 +418,12 @@ export function Sidebar() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                fontSize: 12, fontWeight: 600, color: "var(--sidebar-ink)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--sidebar-ink)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
               {user?.username}
@@ -413,9 +431,14 @@ export function Sidebar() {
             <button
               onClick={() => setShowChgPw(true)}
               style={{
-                background: "none", border: "none", padding: 0,
-                fontSize: 10, color: "var(--sidebar-muted)", cursor: "pointer",
-                fontFamily: "var(--sans)", textDecoration: "underline",
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: 10,
+                color: "var(--sidebar-muted)",
+                cursor: "pointer",
+                fontFamily: "var(--sans)",
+                textDecoration: "underline",
               }}
             >
               Change password
@@ -425,9 +448,13 @@ export function Sidebar() {
             onClick={logout}
             title="Sign out"
             style={{
-              background: "none", border: "1px solid rgba(255,255,255,.15)",
-              borderRadius: 5, color: "var(--sidebar-muted)",
-              cursor: "pointer", fontSize: 11, padding: "3px 7px",
+              background: "none",
+              border: "1px solid rgba(255,255,255,.15)",
+              borderRadius: 5,
+              color: "var(--sidebar-muted)",
+              cursor: "pointer",
+              fontSize: 11,
+              padding: "3px 7px",
             }}
           >
             Out
