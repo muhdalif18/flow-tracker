@@ -56,9 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = user?.role === 'admin';
 
-  // Admin can edit everything; others can only edit their own content
-  const isOwner = (createdBy: string | null | undefined) =>
-    isAdmin || !createdBy || createdBy === user?.userId;
+  // Any authenticated user can edit
+  const isOwner = (createdBy: string | null | undefined) => !!user;
 
   return (
     <Ctx.Provider value={{ user, isAdmin, isOwner, login, logout }}>

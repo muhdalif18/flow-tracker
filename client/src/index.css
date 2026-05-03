@@ -985,6 +985,20 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   padding: 2px 7px; border-radius: var(--r-sm); flex-shrink: 0; letter-spacing: .02em; white-space: nowrap;
 }
 
+.step-issue-label {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  flex-shrink: 0;
+}
+.step-issue-blocker { background: var(--bad); }
+.step-issue-major { background: var(--warn); }
+.step-issue-minor { background: var(--ink-3); }
+
 .step-desc-inp {
   flex: 1; border: none; background: transparent;
   font-family: var(--sans); font-size: 13px; font-weight: 500;
