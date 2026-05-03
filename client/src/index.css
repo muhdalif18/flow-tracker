@@ -696,7 +696,15 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .row-fail:hover td { background: #fef2f2 !important; }
 .row-pass td:first-child { border-left: 2px solid var(--ok); }
 .row-fail td:first-child { border-left: 2px solid var(--bad); }
-.sc-desc { line-height: 1.45; color: var(--ink); }
+.sc-desc { line-height: 1.45; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.sc-desc .fi-action-btn { opacity: 0; transition: opacity var(--t); color: var(--ink-3); }
+.sc-row:hover .sc-desc .fi-action-btn { opacity: 1; }
+.sc-desc-inp {
+  flex: 1; border: none; background: transparent;
+  font-family: var(--sans); font-size: 13px; font-weight: 400;
+  color: var(--ink); outline: none; min-width: 0; line-height: 1.45;
+  padding: 2px 4px; border-radius: 4px;
+}
 
 .blid {
   font-family: var(--mono); font-size: 10px; font-weight: 600;
