@@ -4,16 +4,8 @@ import { api } from './api';
 
 const LS_EXPANDED = 'ft_expanded';
 
-function loadExpanded(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_EXPANDED);
-    if (raw) return new Set(JSON.parse(raw));
-  } catch {}
-  return new Set();
-}
-
-function saveExpanded(s: Set<string>) {
-  try { localStorage.setItem(LS_EXPANDED, JSON.stringify([...s])); } catch {}
+function clearSavedExpanded() {
+  try { localStorage.removeItem(LS_EXPANDED); } catch {}
 }
 
 interface AppState {
@@ -47,14 +39,25 @@ function reducer(state: AppState, action: Action): AppState {
         : (action.flows.find(f => f.id === state.activeFlowId) ? state.activeFlowId : (action.flows[0]?.id ?? null));
       return { ...state, flows: action.flows, activeFlowId: activeId, loading: false };
     }
-    case 'SET_ACTIVE':  return { ...state, activeFlowId: action.id, activeTab: 'diagram' };
-    case 'SET_TAB':     return { ...state, activeTab: action.tab };
+    case 'SET_ACTIVE':
+      clearSavedExpanded();
+      return { ...state, activeFlowId: action.id, activeTab: 'diagram', expanded: new Set() };
+    case 'SET_TAB': {
+      const shouldCloseExpanded =
+        action.tab !== state.activeTab &&
+        (state.activeTab === 'scenarios' || action.tab === 'scenarios');
+      if (shouldCloseExpanded) clearSavedExpanded();
+      return {
+        ...state,
+        activeTab: action.tab,
+        expanded: shouldCloseExpanded ? new Set() : state.expanded,
+      };
+    }
     case 'SET_LOADING': return { ...state, loading: action.v };
     case 'SET_SEARCH':  return { ...state, searchQuery: action.q };
     case 'TOGGLE_EXPAND': {
       const next = new Set(state.expanded);
       next.has(action.id) ? next.delete(action.id) : next.add(action.id);
-      saveExpanded(next);
       return { ...state, expanded: next };
     }
     case 'TOGGLE_BULK': {
@@ -71,7 +74,7 @@ function reducer(state: AppState, action: Action): AppState {
 
 const init: AppState = {
   flows: [], activeFlowId: null, activeTab: 'diagram',
-  expanded: loadExpanded(), loading: true,
+  expanded: new Set(), loading: true,
   searchQuery: '', bulkSelected: new Set(), highlightModuleId: null,
 };
 

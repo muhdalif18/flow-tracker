@@ -26,7 +26,7 @@ const V_GAP  = 50;    // vertical gap between parallel modules
 const PAD    = 50;    // horizontal padding
 
 export function FlowDiagram() {
-  const { activeFlow, setTab } = useApp();
+  const { activeFlow, setTab, setHighlightModule, setSearch } = useApp();
   if (!activeFlow) return null;
 
   const { modules } = activeFlow;
@@ -212,7 +212,11 @@ export function FlowDiagram() {
 
                   {/* Clickable overlay */}
                   <rect x={x} y={y} width={NW} height={NH} rx="9" fill="transparent"
-                    style={{ cursor: 'pointer' }} onClick={() => setTab('scenarios')} />
+                    style={{ cursor: 'pointer' }} onClick={() => {
+                      setSearch('');
+                      setHighlightModule(mod.id);
+                      setTab('scenarios');
+                    }} />
                 </g>
               );
             })

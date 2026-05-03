@@ -349,7 +349,7 @@ function CopyStepModal({ step, onClose }: { step: TestStep; onClose: () => void 
           <>
             <input
               autoFocus
-              placeholder="Search scenariosâ€¦"
+              placeholder="Search scenarios..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               style={{ width: '100%', padding: '8px 11px', border: '1px solid var(--line)', borderRadius: 7, fontFamily: 'var(--sans)', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
@@ -514,7 +514,7 @@ function StepCard({
         <input
           className="step-desc-inp"
           defaultValue={step.description}
-          placeholder="Step descriptionâ€¦"
+          placeholder="Step description..."
           readOnly={!canEdit}
           onClick={(e) => e.stopPropagation()}
           onBlur={
@@ -570,7 +570,7 @@ function StepCard({
               ref={fit}
               rows={2}
               defaultValue={step.expected}
-              placeholder="Describe what should happenâ€¦"
+              placeholder="Describe what should happen..."
               readOnly={!canEdit}
               onInput={(e) => fit(e.currentTarget)}
               onBlur={
@@ -744,7 +744,7 @@ function StepCard({
                   ref={fit}
                   rows={2}
                   defaultValue={step.remarks}
-                  placeholder="Describe the actual outcomeâ€¦"
+                  placeholder="Describe the actual outcome..."
                   readOnly={!canEdit}
                   onInput={(e) => fit(e.currentTarget)}
                   onBlur={
