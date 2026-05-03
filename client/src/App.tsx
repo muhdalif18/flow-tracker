@@ -389,8 +389,12 @@ function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<ty
               <label className="rp-option-row" style={{ marginTop: 8 }}>
                 <input type="checkbox" checked={useGroup} onChange={e => setUseGroup(e.target.checked)} />
                 <div>
-                  <span className="rp-option-text">Include all flows in group</span>
-                  <span className="rp-option-sub">{groupFlows.map(f => f.name).join(', ')}</span>
+                  <span className="rp-option-text">Include all flows in this group</span>
+                  <ul className="rp-option-sub rp-flow-list">
+                    {groupFlows.map(f => (
+                      <li key={f.id}>{f.name}</li>
+                    ))}
+                  </ul>
                 </div>
               </label>
             )}
@@ -509,7 +513,7 @@ function MainPanel({
           </svg>
           <input
             ref={searchRef}
-            placeholder="Search modules, BLIDs, steps…"
+            placeholder="Search modules, BLIDs, scenarios, steps..."
             value={state.searchQuery}
             onChange={e => { setSearch(e.target.value); if (activeFlow) setTab('scenarios'); }}
             onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); if (searchRef.current) searchRef.current.blur(); } }}

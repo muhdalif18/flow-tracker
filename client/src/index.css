@@ -1508,7 +1508,7 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   border: 1px solid var(--blue-line); display: grid; place-items: center; color: var(--blue-2); flex-shrink: 0;
 }
 .rp-source-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.rp-source-name { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-source-name { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
 .rp-source-meta { font-size: 11px; color: var(--ink-3); }
 /* Format cards */
 .rp-format-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -1540,6 +1540,16 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .rp-option-row input { accent-color: var(--blue-2); width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; cursor: pointer; }
 .rp-option-text { display: block; font-size: 13px; font-weight: 500; color: var(--ink); }
 .rp-option-sub  { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.rp-flow-list {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.rp-flow-list li {
+  margin: 2px 0;
+  padding-left: 2px;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
 /* Footer */
 .rp-footer {
   display: flex; align-items: center; justify-content: space-between;
