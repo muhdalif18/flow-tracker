@@ -216,8 +216,7 @@ async function sendResetEmail(to: string, resetUrl: string) {
 
 // ── Ownership helper ──────────────────────────────────────────────────────
 function canEdit(owner: string | null | undefined, userId: string, role = 'tester'): boolean {
-  if (role === 'admin') return true;
-  return !owner || owner === userId;
+  return !!userId;
 }
 
 function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {

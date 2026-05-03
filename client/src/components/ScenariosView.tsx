@@ -526,6 +526,15 @@ function StepCard({
               : undefined
           }
         />
+        {step.status === "fail" && step.issue_type === "blocker" && (
+          <span className="step-issue-label step-issue-blocker">BLOCKER</span>
+        )}
+        {step.status === "fail" && step.issue_type === "major" && (
+          <span className="step-issue-label step-issue-major">MAJOR</span>
+        )}
+        {step.status === "fail" && step.issue_type === "minor" && (
+          <span className="step-issue-label step-issue-minor">MINOR</span>
+        )}
         <button
           className="btn-xs"
           title="Copy step to another scenario"
