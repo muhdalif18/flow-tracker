@@ -1059,8 +1059,22 @@ function ScenarioRow({
   onDragStart: () => void; onDragOver: () => void;
   onDrop: () => void; onDragEnd: () => void;
 }) {
-  const { state, toggleExpand } = useApp();
+  const { state, toggleExpand, updateScenario } = useApp();
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descVal, setDescVal] = useState(sc.description);
   const isExp = state.expanded.has(sc.id);
+
+  const startDescEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDescVal(sc.description);
+    setEditingDesc(true);
+  };
+
+  const commitDescEdit = async () => {
+    const v = descVal.trim();
+    if (v && v !== sc.description) await updateScenario(sc.id, { description: v });
+    setEditingDesc(false);
+  };
 
   // Derive status: only a blocker step makes the scenario 'fail'
   const derived = scenarioStatus(sc);
@@ -1096,7 +1110,32 @@ function ScenarioRow({
         {/* Description + issue badge + step counts */}
         <td>
           <div className="sc-desc">
-            {sc.description}
+            {editingDesc ? (
+              <input
+                autoFocus
+                className="sc-desc-inp"
+                value={descVal}
+                onChange={(e) => setDescVal(e.target.value)}
+                onBlur={commitDescEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitDescEdit();
+                  if (e.key === "Escape") {
+                    setDescVal(sc.description);
+                    setEditingDesc(false);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <>
+                <span>{sc.description}</span>
+                {canEdit && (
+                  <button className="fi-action-btn" onClick={startDescEdit} title="Edit description">
+                    ✎
+                  </button>
+                )}
+              </>
+            )}
             {issue && (
               <span className={`sc-issue ${issue}`}>
                 {issue.toUpperCase()}
