@@ -471,13 +471,23 @@ function MainPanel({
   dark: boolean;
   onToggleTheme: () => void;
 }) {
-  const { activeFlow, state, setTab, setSearch } = useApp();
+  const { activeFlow, state, setTab, setSearch, toggleCopyEnabled, copyFlow } = useApp();
   const { isOwner, isAdmin } = useAuth();
   const [showAddMod,     setShowAddMod]     = useState(false);
   const [showExport,     setShowExport]     = useState(false);
   const [showAdmin,      setShowAdmin]      = useState(false);
   const [showPreview,    setShowPreview]    = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const handleToggleCopy = async () => {
+    if (!activeFlow) return;
+    await toggleCopyEnabled(activeFlow.id, !activeFlow.copy_enabled);
+  };
+
+  const handleCopyFlow = async () => {
+    if (!activeFlow) return;
+    await copyFlow(activeFlow.id);
+  };
 
   if (state.loading) {
     return (
@@ -579,6 +589,40 @@ function MainPanel({
               title="User management"
             >
               👥 Users
+            </button>
+          )}
+          {activeFlow && isAdmin && (
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                color: 'var(--ink-2)',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+              }}
+              title="Allow users to copy this flow"
+            >
+              <input
+                type="checkbox"
+                checked={activeFlow.copy_enabled}
+                onChange={handleToggleCopy}
+                style={{ cursor: 'pointer' }}
+              />
+              <span>Enable Copy</span>
+            </label>
+          )}
+          {activeFlow && activeFlow.copy_enabled && (
+            <button
+              className="btn-sm"
+              onClick={handleCopyFlow}
+              title="Copy this flow with all modules, scenarios, and steps"
+            >
+              📋 Copy Flow
             </button>
           )}
           {activeFlow && isOwner(activeFlow.created_by) && (

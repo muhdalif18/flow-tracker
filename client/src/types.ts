@@ -45,6 +45,7 @@ export interface Flow {
   order_idx: number;
   created_by: string | null;
   created_by_name: string | null;
+  copy_enabled: boolean;
   modules: Module[];
 }
 
