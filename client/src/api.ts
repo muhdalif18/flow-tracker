@@ -68,6 +68,10 @@ export const api = {
     post(`${BASE}/flows`, { name, description, group_name }),
   updateFlow: (id: string, data: { name?: string; group_name?: string }) => put(`${BASE}/flows/${id}`, data),
   deleteFlow: (id: string) => del(`${BASE}/flows/${id}`),
+  toggleCopyEnabled: (id: string, copy_enabled: boolean): Promise<{ ok: boolean }> =>
+    put(`${BASE}/flows/${id}/copy-enabled`, { copy_enabled }),
+  copyFlow: (id: string): Promise<Flow> =>
+    post(`${BASE}/flows/${id}/copy`, {}),
 
   // Modules
   addModule: (flowId: string, data: { label: string; name: string; side: string; note: string; parallel_group?: string }) =>

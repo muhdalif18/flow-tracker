@@ -93,6 +93,8 @@ interface AppContextValue {
   createFlow: (name: string, desc: string, group?: string) => Promise<void>;
   updateFlow: (id: string, data: { name?: string; group_name?: string }) => Promise<void>;
   deleteFlow: (id: string) => Promise<void>;
+  toggleCopyEnabled: (id: string, enabled: boolean) => Promise<void>;
+  copyFlow: (id: string) => Promise<void>;
   addModule: (flowId: string, data: { label: string; name: string; side: string; note: string; parallel_group?: string }) => Promise<void>;
   deleteModule: (id: string) => Promise<void>;
   moveModule: (flowId: string, moduleId: string, dir: -1 | 1) => Promise<void>;
@@ -143,6 +145,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_FLOWS', flows, keepActive: state.activeFlowId !== id ? state.activeFlowId : newActive });
   }, [state.activeFlowId]);
 
+  const toggleCopyEnabled = useCallback(async (id: string, enabled: boolean) => {
+    await api.toggleCopyEnabled(id, enabled);
+    await loadFlows(state.activeFlowId);
+  }, [loadFlows, state.activeFlowId]);
+
+  const copyFlow = useCallback(async (id: string) => {
+    const newFlow = await api.copyFlow(id);
+    await loadFlows(newFlow.id);
+  }, [loadFlows]);
+
   const addModule    = useCallback(async (fid: string, d: { label: string; name: string; side: string; note: string; parallel_group?: string }) => { await api.addModule(fid, d);      await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const deleteModule = useCallback(async (id: string) => { await api.deleteModule(id);    await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
   const moveModule   = useCallback(async (fid: string, mid: string, dir: -1 | 1) => { await api.reorderModule(fid, mid, dir); await loadFlows(state.activeFlowId); }, [loadFlows, state.activeFlowId]);
@@ -175,7 +187,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clearBulk:  () => dispatch({ type: 'CLEAR_BULK' }),
       setBulk: ids   => dispatch({ type: 'SET_BULK', ids }),
       setHighlightModule: id => dispatch({ type: 'SET_HIGHLIGHT_MOD', id }),
-      createFlow, updateFlow, deleteFlow, addModule, deleteModule, moveModule,
+      createFlow, updateFlow, deleteFlow, toggleCopyEnabled, copyFlow,
+      addModule, deleteModule, moveModule,
       addScenario, updateScenario, deleteScenario, moveScenario,
       addStep, updateStep, deleteStep, copyStep, moveStep,
       bulkUpdateSteps, uploadImage,

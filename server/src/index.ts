@@ -101,6 +101,7 @@ async function initDB() {
       )
     `);
     await client.query(`ALTER TABLE flows ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT ''`);
+    await client.query(`ALTER TABLE flows ADD COLUMN IF NOT EXISTS copy_enabled BOOLEAN NOT NULL DEFAULT false`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS modules (
         id             TEXT PRIMARY KEY,
@@ -514,6 +515,98 @@ app.delete('/api/flows/:id', async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'You can only delete your own flows' });
   await pool.query('DELETE FROM flows WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
+});
+
+// Toggle copy_enabled for a flow (admin only)
+app.put('/api/flows/:id/copy-enabled', requireAdmin, async (req: AuthRequest, res) => {
+  const { copy_enabled } = req.body as { copy_enabled?: boolean };
+  if (typeof copy_enabled !== 'boolean') return res.status(400).json({ error: 'copy_enabled must be boolean' });
+
+  const { rows } = await pool.query('SELECT id FROM flows WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Flow not found' });
+
+  await pool.query('UPDATE flows SET copy_enabled = $1 WHERE id = $2', [copy_enabled, req.params.id]);
+  res.json({ ok: true });
+});
+
+// Copy a flow with all its modules, scenarios, and steps
+app.post('/api/flows/:id/copy', async (req: AuthRequest, res) => {
+  const { rows: flowRows } = await pool.query('SELECT * FROM flows WHERE id = $1', [req.params.id]);
+  if (!flowRows.length) return res.status(404).json({ error: 'Flow not found' });
+
+  const sourceFlow = flowRows[0];
+  if (!sourceFlow.copy_enabled) return res.status(403).json({ error: 'Copying is not enabled for this flow' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Create new flow
+    const newFlowId = uuidv4();
+    const { rows: maxOrderRows } = await client.query('SELECT MAX(order_idx) AS mx FROM flows');
+    const newFlowOrder = (maxOrderRows[0]?.mx ?? -1) + 1;
+
+    await client.query(
+      'INSERT INTO flows (id, name, description, group_name, order_idx, created_by, copy_enabled) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [newFlowId, `${sourceFlow.name} (Copy)`, sourceFlow.description, sourceFlow.group_name, newFlowOrder, req.user!.userId, false]
+    );
+
+    // Get all modules from source flow
+    const { rows: modules } = await client.query(
+      'SELECT * FROM modules WHERE flow_id = $1 ORDER BY order_idx',
+      [req.params.id]
+    );
+
+    // Copy each module
+    for (const mod of modules) {
+      const newModuleId = uuidv4();
+      await client.query(
+        'INSERT INTO modules (id, flow_id, label, name, side, note, parallel_group, order_idx, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [newModuleId, newFlowId, mod.label, mod.name, mod.side, mod.note, mod.parallel_group, mod.order_idx, req.user!.userId]
+      );
+
+      // Get all scenarios from this module
+      const { rows: scenarios } = await client.query(
+        'SELECT * FROM scenarios WHERE module_id = $1 ORDER BY order_idx',
+        [mod.id]
+      );
+
+      // Copy each scenario
+      for (const scenario of scenarios) {
+        const newScenarioId = uuidv4();
+        await client.query(
+          'INSERT INTO scenarios (id, module_id, blid, description, order_idx) VALUES ($1,$2,$3,$4,$5)',
+          [newScenarioId, newModuleId, scenario.blid, scenario.description, scenario.order_idx]
+        );
+
+        // Get all steps from this scenario
+        const { rows: steps } = await client.query(
+          'SELECT * FROM test_steps WHERE scenario_id = $1 ORDER BY order_idx',
+          [scenario.id]
+        );
+
+        // Copy each step (description and expected only, no execution data)
+        for (const step of steps) {
+          const newStepId = uuidv4();
+          await client.query(
+            'INSERT INTO test_steps (id, scenario_id, description, expected, order_idx) VALUES ($1,$2,$3,$4,$5)',
+            [newStepId, newScenarioId, step.description, step.expected, step.order_idx]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+
+    // Return the new flow
+    const flows = await getAllFlows();
+    res.json(flows.find(f => f.id === newFlowId));
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // ── Modules ───────────────────────────────────────────────────────────────
