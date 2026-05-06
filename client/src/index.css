@@ -1547,8 +1547,10 @@ table.tbl tbody tr td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
   transition: background .15s;
 }
 .rp-format-icon--html  { background: #eff6ff; color: #1d4ed8; }
+.rp-format-icon--pdf   { background: #fef2f2; color: #dc2626; }
 .rp-format-icon--excel { background: #f0fdf4; color: #16a34a; }
 .rp-format-card.on .rp-format-icon--html  { background: #dbeafe; }
+.rp-format-card.on .rp-format-icon--pdf   { background: #fecaca; }
 .rp-format-card.on .rp-format-icon--excel { background: #bbf7d0; }
 .rp-format-name { font-size: 13px; font-weight: 600; color: var(--ink); }
 .rp-format-sub  { font-size: 11px; color: var(--ink-3); }
