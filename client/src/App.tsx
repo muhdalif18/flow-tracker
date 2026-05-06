@@ -9,7 +9,7 @@ import { BLIDDashboard } from "./components/BLIDDashboard";
 import OverviewDashboard from "./components/OverviewDashboard";
 import { AdminPanel } from "./components/AdminPanel";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
-import { exportReport, exportExcel } from "./exportReport";
+import { exportReport, exportExcel, exportPDF } from "./exportReport";
 
 const QUICK = [
   { l: "M3", n: "e-DS Dashboard", s: "eDS" },
@@ -325,7 +325,7 @@ function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<ty
   const { state } = useApp();
   const [inclFailed,  setInclFailed]  = useState(false);
   const [useGroup,    setUseGroup]    = useState(false);
-  const [format, setFormat] = useState<'html' | 'excel'>('html');
+  const [format, setFormat] = useState<'html' | 'excel' | 'pdf'>('html');
 
   const groupName   = flow.group_name?.trim();
   const groupFlows  = groupName ? state.flows.filter(f => f.group_name?.trim() === groupName) : [flow];
@@ -336,10 +336,12 @@ function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<ty
   const totalSc    = targetFlows.reduce((n, f) => f.modules.reduce((n2, m) => n2 + m.scenarios.length, n), 0);
   const totalSteps = targetFlows.reduce((n, f) => f.modules.reduce((n2, m) => m.scenarios.reduce((n3, s) => n3 + s.steps.length, n2), n), 0);
 
-  const doExport = () => {
+  const doExport = async () => {
     const target = useGroup && hasGroup ? groupFlows : flow;
     if (format === 'html') {
       exportReport(target, { onlyFailed: inclFailed });
+    } else if (format === 'pdf') {
+      await exportPDF(target, { onlyFailed: inclFailed });
     } else {
       exportExcel(useGroup && hasGroup
         ? { ...flow, name: groupName!, modules: groupFlows.flatMap(f => f.modules) } as typeof flow
@@ -413,6 +415,15 @@ function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<ty
                 <span className="rp-format-name">HTML Report</span>
                 <span className="rp-format-sub">Print-ready, shareable</span>
               </button>
+              <button className={`rp-format-card ${format === 'pdf' ? 'on' : ''}`} onClick={() => setFormat('pdf')}>
+                <div className="rp-format-icon rp-format-icon--pdf">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                </div>
+                <span className="rp-format-name">PDF Document</span>
+                <span className="rp-format-sub">Portable, professional</span>
+              </button>
               <button className={`rp-format-card ${format === 'excel' ? 'on' : ''}`} onClick={() => setFormat('excel')}>
                 <div className="rp-format-icon rp-format-icon--excel">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -420,13 +431,13 @@ function ReportPreviewModal({ flow, onClose }: { flow: NonNullable<ReturnType<ty
                   </svg>
                 </div>
                 <span className="rp-format-name">Excel (.xlsx)</span>
-                <span className="rp-format-sub">3 sheets: Summary, Scenarios, Steps</span>
+                <span className="rp-format-sub">4 sheets: Summary, BLID, Scenarios, Steps</span>
               </button>
             </div>
           </div>
 
-          {/* Options — HTML only */}
-          {format === 'html' && (
+          {/* Options — HTML and PDF only */}
+          {(format === 'html' || format === 'pdf') && (
             <div className="rp-field">
               <div className="rp-field-label">Options</div>
               <label className="rp-option-row">

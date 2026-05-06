@@ -232,6 +232,15 @@ function fit(el: HTMLTextAreaElement | null) {
   el.style.height = el.scrollHeight + "px";
 }
 
+// ── ADO Ticket parsing helper ────────────────────────────────────────────────
+function parseAdoTickets(raw: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 // â"€â"€ Add Scenario Modal â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function AddScenarioModal({
   moduleId,
@@ -718,7 +727,7 @@ function StepCard({
                     <input
                       className={`step-meta-inp ${step.status === 'fail' && !step.ado_ticket ? 'step-meta-inp--info' : ''}`}
                       defaultValue={step.ado_ticket}
-                      placeholder="ADO ticket #"
+                      placeholder="e.g. 15501, 15502"
                       readOnly={!canEdit}
                       onBlur={
                         canEdit
@@ -853,7 +862,9 @@ function StepCard({
 
 // â"€â"€ Bulk Action Bar â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function BulkActionBar() {
-  const { state, clearBulk, bulkUpdateSteps } = useApp();
+  const { state, clearBulk, bulkUpdateSteps, copyStep } = useApp();
+  const { isOwner } = useAuth();
+  const [showBulkCopy, setShowBulkCopy] = useState(false);
   const count = state.bulkSelected.size;
   if (count === 0) return null;
 
@@ -863,33 +874,154 @@ function BulkActionBar() {
   const bulk = async (data: Partial<TestStep>) => { await bulkUpdateSteps(ids, data); clearBulk(); };
 
   return (
-    <div className="bulk-bar">
-      <span className="bulk-count">{count} step{count !== 1 ? 's' : ''} selected</span>
-      <div className="bulk-actions">
-        <button className="bulk-btn bulk-pass" onClick={() => bulk({ status: 'pass', date_tested: isoToday_() })}>
-          ✓ Mark Pass
-        </button>
-        <button className="bulk-btn bulk-fail" onClick={() => bulk({ status: 'fail', date_tested: isoToday_() })}>
-          ✗ Mark Fail
-        </button>
-        <button className="bulk-btn bulk-reset" onClick={() => bulk({ status: 'untested', issue_type: null, date_tested: '' })}>
-          Reset
-        </button>
-        <button className="bulk-btn bulk-date" onClick={() => {
-          const d = prompt('Set date (YYYY-MM-DD):', isoToday_());
-          if (d) bulk({ date_tested: d });
-        }}>
-          📅 Set Date
-        </button>
-        <button className="bulk-btn bulk-ado" onClick={() => {
-          const t = prompt('Set ADO ticket number:');
-          if (t !== null) bulk({ ado_ticket: t });
-        }}>
-          🎫 Set ADO
-        </button>
+    <>
+      <div className="bulk-bar">
+        <span className="bulk-count">{count} step{count !== 1 ? 's' : ''} selected</span>
+        <div className="bulk-actions">
+          <button className="bulk-btn bulk-pass" onClick={() => bulk({ status: 'pass', date_tested: isoToday_() })}>
+            ✓ Mark Pass
+          </button>
+          <button className="bulk-btn bulk-fail" onClick={() => bulk({ status: 'fail', date_tested: isoToday_() })}>
+            ✗ Mark Fail
+          </button>
+          <button className="bulk-btn bulk-reset" onClick={() => bulk({ status: 'untested', issue_type: null, date_tested: '' })}>
+            Reset
+          </button>
+          <button className="bulk-btn bulk-date" onClick={() => {
+            const d = prompt('Set date (YYYY-MM-DD):', isoToday_());
+            if (d) bulk({ date_tested: d });
+          }}>
+            📅 Set Date
+          </button>
+          <button className="bulk-btn bulk-ado" onClick={() => {
+            const t = prompt('Set ADO ticket number:');
+            if (t !== null) bulk({ ado_ticket: t });
+          }}>
+            🎫 Set ADO
+          </button>
+          <button className="bulk-btn bulk-copy" onClick={() => setShowBulkCopy(true)}>
+            <IcoCopy /> Copy to Scenario
+          </button>
+        </div>
+        <button className="bulk-cancel" onClick={clearBulk} title="Clear selection">✕</button>
       </div>
-      <button className="bulk-cancel" onClick={clearBulk} title="Clear selection">✕</button>
+      {showBulkCopy && <BulkCopyModal stepIds={ids} onClose={() => { setShowBulkCopy(false); clearBulk(); }} />}
+    </>
+  );
+}
+
+// ── Bulk Copy Modal ──────────────────────────────────────────────────────────
+function BulkCopyModal({ stepIds, onClose }: { stepIds: string[]; onClose: () => void }) {
+  const { state, copyStep } = useApp();
+  const { isOwner } = useAuth();
+  const { confirm, modal: confirmModal } = useConfirm();
+  const [selectedId, setSelectedId] = useState('');
+  const [search,     setSearch]     = useState('');
+  const [copying,    setCopying]    = useState(false);
+  const [done,       setDone]       = useState(false);
+
+  const myFlows = state.flows.filter(f => isOwner(f.created_by));
+
+  const allScenarios = myFlows.flatMap(f =>
+    f.modules.flatMap(m =>
+      m.scenarios.map(sc => ({ ...sc, moduleLabel: m.label, moduleName: m.name, moduleId: m.id, flowName: f.name, flowId: f.id }))
+    )
+  );
+
+  const filtered = search.trim()
+    ? allScenarios.filter(sc =>
+        sc.description.toLowerCase().includes(search.toLowerCase()) ||
+        sc.blid.toLowerCase().includes(search.toLowerCase()) ||
+        sc.moduleName.toLowerCase().includes(search.toLowerCase()) ||
+        sc.flowName.toLowerCase().includes(search.toLowerCase())
+      )
+    : allScenarios;
+
+  const grouped = myFlows.flatMap(f =>
+    f.modules.map(m => ({
+      flowName: f.name,
+      m,
+      scenarios: filtered.filter(sc => sc.moduleId === m.id),
+    }))
+  ).filter(g => g.scenarios.length > 0);
+
+  const handleCopy = async () => {
+    console.log('handleCopy called, selectedId:', selectedId);
+    if (!selectedId) {
+      console.log('No scenario selected');
+      return;
+    }
+
+    const targetScenario = allScenarios.find(sc => sc.id === selectedId);
+    console.log('targetScenario:', targetScenario);
+    if (!targetScenario) {
+      console.log('Target scenario not found');
+      return;
+    }
+
+    const ok = await confirm({
+      message: `Copy ${stepIds.length} step${stepIds.length !== 1 ? 's' : ''} to "${targetScenario.blid}: ${targetScenario.description}"?`,
+      confirmLabel: 'Copy',
+      danger: false,
+    });
+
+    console.log('Confirmation result:', ok);
+    if (!ok) return;
+
+    setCopying(true);
+    for (const stepId of stepIds) {
+      console.log('Copying step:', stepId, 'to scenario:', selectedId);
+      await copyStep(stepId, selectedId);
+    }
+    setCopying(false);
+    setDone(true);
+    setTimeout(onClose, 1100);
+  };
+
+  return (
+    <>
+      {confirmModal}
+      <div className="modal-overlay" onClick={onClose} style={{ zIndex: 998 }}>
+        <div className="modal-box" style={{ width: 500, maxHeight: '78vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <h3>Copy {stepIds.length} Step{stepIds.length !== 1 ? 's' : ''} to Scenario</h3>
+        {done ? (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--ok)', fontWeight: 600, fontSize: 14 }}>
+            {stepIds.length} step{stepIds.length !== 1 ? 's' : ''} copied successfully!
+          </div>
+        ) : (
+          <>
+            <input autoFocus placeholder="Search scenarios..." value={search} onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', padding: '8px 11px', border: '1px solid var(--line)', borderRadius: 7, fontFamily: 'var(--sans)', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 8 }}>
+              {grouped.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No scenarios found.</div>}
+              {grouped.map(({ flowName, m, scenarios }) => (
+                <div key={m.id}>
+                  <div style={{ padding: '6px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', background: 'var(--hover)', borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ opacity: .6 }}>{flowName} · </span>{m.label} · {m.name}
+                  </div>
+                  {scenarios.map(sc => (
+                    <button key={sc.id} onClick={() => setSelectedId(sc.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', borderBottom: '1px solid var(--line)', textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--sans)',
+                        background: selectedId === sc.id ? 'rgba(29,78,216,.06)' : 'transparent', borderLeft: selectedId === sc.id ? '3px solid var(--blue-2)' : '3px solid transparent' }}>
+                      <span className="blid" style={{ flexShrink: 0 }}>{sc.blid}</span>
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{sc.description}</span>
+                      <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{sc.steps.length} steps</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions" style={{ marginTop: 12 }}>
+              <button type="button" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={() => { console.log('Button clicked!'); handleCopy(); }} disabled={!selectedId || copying}>
+                {copying ? 'Copying…' : `Copy ${stepIds.length} Step${stepIds.length !== 1 ? 's' : ''} Here`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
+    </>
   );
 }
 
@@ -942,34 +1074,50 @@ function ExpandPanel({ sc, canEdit }: { sc: Scenario; canEdit: boolean }) {
       {sc.steps.map((step, i) => (
         <div
           key={step.id}
-          draggable={canEdit}
-          onDragStart={() => setDragFromIdx(i)}
-          onDragOver={e => { e.preventDefault(); setDragOverIdx(i); }}
-          onDragEnd={() => { setDragFromIdx(null); setDragOverIdx(null); }}
-          onDrop={async () => {
-            const from = dragFromIdx;
-            const to   = i;
-            setDragFromIdx(null);
-            setDragOverIdx(null);
-            if (from === null || from === to) return;
-            const ok = await confirm({
-              message: `Move "Step ${from + 1}" to position ${to + 1}?`,
-              confirmLabel: 'Move',
-              danger: false,
-            });
-            if (ok) await moveStep(sc.id, sc.steps[from].id, to);
-          }}
           style={{
             outline: dragOverIdx === i && dragFromIdx !== null && dragFromIdx !== i
               ? '2px dashed var(--blue-2)'
               : 'none',
             borderRadius: 8,
+            display: 'flex',
+            alignItems: 'stretch',
           }}
         >
           {canEdit && (
-            <div style={{ padding: '3px 10px 0', cursor: 'grab', userSelect: 'none' }} title="Drag to reorder" />
+            <div
+              draggable
+              onDragStart={() => setDragFromIdx(i)}
+              onDragOver={e => { e.preventDefault(); setDragOverIdx(i); }}
+              onDragEnd={() => { setDragFromIdx(null); setDragOverIdx(null); }}
+              onDrop={async () => {
+                const from = dragFromIdx;
+                const to   = i;
+                setDragFromIdx(null);
+                setDragOverIdx(null);
+                if (from === null || from === to) return;
+                const ok = await confirm({
+                  message: `Move "Step ${from + 1}" to position ${to + 1}?`,
+                  confirmLabel: 'Move',
+                  danger: false,
+                });
+                if (ok) await moveStep(sc.id, sc.steps[from].id, to);
+              }}
+              style={{
+                padding: '8px 6px',
+                cursor: 'grab',
+                userSelect: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                color: 'var(--ink-3)',
+              }}
+              title="Drag to reorder"
+            >
+              <IcoDrag />
+            </div>
           )}
-          <StepCard step={step} stepNo={i + 1} canEdit={canEdit} />
+          <div style={{ flex: 1 }}>
+            <StepCard step={step} stepNo={i + 1} canEdit={canEdit} />
+          </div>
         </div>
       ))}
 
@@ -1082,12 +1230,26 @@ function ScenarioRow({
   // Derive worst issue type from failed steps
   const issue = scenarioIssueType(sc);
 
-  // Last tested step for date; any step with a ticket for ADO
+  // Last tested step for date; collect ADO tickets with their status
   const testedStep = [...sc.steps]
     .reverse()
     .find((s) => s.status !== "untested");
   const metaDate = renderDate(testedStep?.date_tested || "");
-  const metaAdos = [...new Set(sc.steps.map((s) => s.ado_ticket).filter(Boolean))] as string[];
+
+  // Collect all unique ADO tickets with their resolved status
+  const adoTicketsMap = new Map<string, boolean>(); // ticket -> isResolved
+  sc.steps.forEach((s) => {
+    if (s.ado_ticket) {
+      const tickets = parseAdoTickets(s.ado_ticket);
+      tickets.forEach((ticket) => {
+        // If ticket exists and was previously failing but now passing, mark as resolved
+        const wasResolved = adoTicketsMap.get(ticket);
+        const isResolved = s.status === 'pass';
+        // Keep resolved status if any step shows it as resolved
+        adoTicketsMap.set(ticket, wasResolved || isResolved);
+      });
+    }
+  });
 
   return (
     <>
@@ -1190,11 +1352,19 @@ function ScenarioRow({
 
         {/* ADO ticket(s) */}
         <td>
-          {metaAdos.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {metaAdos.map((ado) => (
-                <span key={ado} className="sc-meta-ado">
-                  {ado.startsWith("http") ? "Link" : ado}
+          {adoTicketsMap.size > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {[...adoTicketsMap.entries()].map(([ticket, isResolved]) => (
+                <span
+                  key={ticket}
+                  className="sc-meta-ado"
+                  style={{
+                    textDecoration: isResolved ? 'line-through' : 'none',
+                    opacity: isResolved ? 0.6 : 1,
+                  }}
+                  title={isResolved ? 'Resolved' : 'Active'}
+                >
+                  {ticket}
                 </span>
               ))}
             </div>
