@@ -946,10 +946,18 @@ function BulkCopyModal({ stepIds, onClose }: { stepIds: string[]; onClose: () =>
   ).filter(g => g.scenarios.length > 0);
 
   const handleCopy = async () => {
-    if (!selectedId) return;
+    console.log('handleCopy called, selectedId:', selectedId);
+    if (!selectedId) {
+      console.log('No scenario selected');
+      return;
+    }
 
     const targetScenario = allScenarios.find(sc => sc.id === selectedId);
-    if (!targetScenario) return;
+    console.log('targetScenario:', targetScenario);
+    if (!targetScenario) {
+      console.log('Target scenario not found');
+      return;
+    }
 
     const ok = await confirm({
       message: `Copy ${stepIds.length} step${stepIds.length !== 1 ? 's' : ''} to "${targetScenario.blid}: ${targetScenario.description}"?`,
@@ -957,10 +965,12 @@ function BulkCopyModal({ stepIds, onClose }: { stepIds: string[]; onClose: () =>
       danger: false,
     });
 
+    console.log('Confirmation result:', ok);
     if (!ok) return;
 
     setCopying(true);
     for (const stepId of stepIds) {
+      console.log('Copying step:', stepId, 'to scenario:', selectedId);
       await copyStep(stepId, selectedId);
     }
     setCopying(false);
@@ -971,7 +981,7 @@ function BulkCopyModal({ stepIds, onClose }: { stepIds: string[]; onClose: () =>
   return (
     <>
       {confirmModal}
-      <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-overlay" onClick={onClose} style={{ zIndex: 998 }}>
         <div className="modal-box" style={{ width: 500, maxHeight: '78vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
           <h3>Copy {stepIds.length} Step{stepIds.length !== 1 ? 's' : ''} to Scenario</h3>
         {done ? (
@@ -1003,7 +1013,7 @@ function BulkCopyModal({ stepIds, onClose }: { stepIds: string[]; onClose: () =>
             </div>
             <div className="modal-actions" style={{ marginTop: 12 }}>
               <button type="button" onClick={onClose}>Cancel</button>
-              <button type="button" className="btn-primary" onClick={handleCopy} disabled={!selectedId || copying}>
+              <button type="button" className="btn-primary" onClick={() => { console.log('Button clicked!'); handleCopy(); }} disabled={!selectedId || copying}>
                 {copying ? 'Copying…' : `Copy ${stepIds.length} Step${stepIds.length !== 1 ? 's' : ''} Here`}
               </button>
             </div>
