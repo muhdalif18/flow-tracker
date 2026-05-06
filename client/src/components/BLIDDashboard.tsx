@@ -96,6 +96,20 @@ export function BLIDDashboard() {
   const groupPassed  = groupBlids.filter(b => groupAll.filter(s => s.blid === b).some(s => scenarioStatus(s) === 'pass'));
   const groupBlidPct = groupBlids.length ? Math.round(groupPassed.length / groupBlids.length * 100) : 0;
 
+  // ── Group-level scenario stats ────────────────────────────────────────────
+  const groupScenarioPass = groupAll.filter(s => scenarioStatus(s) === 'pass').length;
+  const groupScenarioFail = groupAll.filter(s => scenarioStatus(s) === 'fail').length;
+  const groupScenarioUntested = groupAll.filter(s => scenarioStatus(s) === 'untested').length;
+  const groupScenarioTotal = groupAll.length;
+  const groupTested = groupAll.filter(s => scenarioStatus(s) !== 'untested').length;
+  const groupExecPct = groupScenarioTotal ? Math.round(groupTested / groupScenarioTotal * 100) : 0;
+
+  const coveragePct = isGrouped ? groupBlidPct : st.blidPct;
+  const scenarioPass = isGrouped ? groupScenarioPass : st.pass;
+  const scenarioFail = isGrouped ? groupScenarioFail : st.fail;
+  const scenarioTotal = isGrouped ? groupScenarioTotal : st.total;
+  const execPct = isGrouped ? groupExecPct : st.execPct;
+
   // ── Per-flow module rows ──────────────────────────────────────────────────
   const flowModRows = groupFlows.map(f => ({ flow: f, rows: buildModRows(f) })).filter(f => f.rows.length > 0);
 
@@ -106,6 +120,23 @@ export function BLIDDashboard() {
       return next;
     });
   };
+
+  // ── All BLIDs summary (group-wide) ────────────────────────────────────────
+  const blidSummaryMap = new Map<string, { blid: string; desc: string; status: 'pass' | 'fail' | 'untested'; issue: string | null }>();
+  for (const f of groupFlows) {
+    const fAll = f.modules.flatMap(m => m.scenarios);
+    for (const sc of fAll) {
+      if (sc.blid && !blidSummaryMap.has(sc.blid)) {
+        const status = scenarioStatus(sc);
+        const issue = scenarioIssueType(sc);
+        blidSummaryMap.set(sc.blid, { blid: sc.blid, desc: sc.description, status, issue });
+      }
+    }
+  }
+  const allBLIDsSummary = [...blidSummaryMap.values()].sort((a, b) => a.blid.localeCompare(b.blid));
+  const blidPassCount = allBLIDsSummary.filter(b => b.status === 'pass').length;
+  const blidFailCount = allBLIDsSummary.filter(b => b.status === 'fail').length;
+  const blidUntestedCount = allBLIDsSummary.filter(b => b.status === 'untested').length;
 
   // ── Failing BLIDs (group-wide) ────────────────────────────────────────────
   const failMap = new Map<string, { blid: string; desc: string; issue: string | null; mod: string; flowName: string }>();
@@ -126,9 +157,7 @@ export function BLIDDashboard() {
   const integrityStatus = hasBlocker ? 'fail' : st.fail === 0 && st.pass > 0 ? 'pass' : 'warn';
   const syncStatus      = st.total > 0 ? 'active' : 'warn';
 
-  const coveragePct = isGrouped ? groupBlidPct : st.blidPct;
-
-  const currentPct = st.execPct;
+  const currentPct = execPct;
   const trendBars = [
     Math.max(5, currentPct - 65), Math.max(5, currentPct - 55),
     Math.max(5, currentPct - 42), Math.max(5, currentPct - 30),
@@ -142,7 +171,12 @@ export function BLIDDashboard() {
       right: <span className="kpi-chip">{isGrouped ? activeFlow.group_name : 'Full'}</span>,
       value: <><span className="kpi-val">{coveragePct}<span className="kpi-val-unit">%</span></span></>,
       barPct: coveragePct,
-      sub: null,
+      sub: <div className="kpi-sub" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
+        <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{st.blidPass}</span> pass ·
+        <span style={{ color: 'var(--bad)', fontWeight: 600, marginLeft: 4 }}>{st.blidFail}</span> fail ·
+        <span style={{ color: 'var(--ink-3)', fontWeight: 500, marginLeft: 4 }}>{st.blidUntested}</span> untested
+        <span style={{ color: 'var(--ink-4)', marginLeft: 6 }}>of {st.blidTotal} BLIDs</span>
+      </div>,
     },
     {
       label: 'Execution Progress',
@@ -218,21 +252,73 @@ export function BLIDDashboard() {
         </span>
       </div>
 
-      {/* KPI row */}
-      <div className="kpi-row">
-        {kpis.map(k => (
-          <div key={k.label} className="kpi">
-            <div className="kpi-head">
-              <div className="kpi-label">{k.label}</div>
-              {k.right}
-            </div>
-            {k.value}
-            {k.barPct !== null
-              ? <div className="kpi-bar"><div className="kpi-bar-fill" style={{ width: `${k.barPct}%` }} /></div>
-              : k.sub
-            }
+      {/* Parent Flow BLID Summary */}
+      <div className="section" style={{ marginBottom: 20 }}>
+        <div className="section-head">
+          <div className="section-title-lg">
+            {isGrouped ? `${activeFlow.group_name} - All BLIDs` : 'All BLIDs in Flow'}
           </div>
-        ))}
+          <div style={{ display: 'flex', gap: 12, fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600 }}>
+            <span style={{ color: 'var(--ink)' }}>{allBLIDsSummary.length} Total</span>
+            <span style={{ color: 'var(--ok)' }}>{blidPassCount} Pass</span>
+            <span style={{ color: 'var(--bad)' }}>{blidFailCount} Fail</span>
+            <span style={{ color: 'var(--ink-3)' }}>{blidUntestedCount} Untested</span>
+          </div>
+        </div>
+
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th style={{ width: '15%' }}>BLID Number</th>
+              <th style={{ width: '60%' }}>BLID Name / Description</th>
+              <th style={{ width: '15%' }}>Status</th>
+              <th style={{ width: '10%' }}>Issue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allBLIDsSummary.map(b => (
+              <tr key={b.blid} style={{
+                background: b.status === 'fail' ? 'rgba(220,38,38,.02)' : b.status === 'pass' ? 'rgba(22,163,74,.02)' : undefined
+              }}>
+                <td>
+                  <span className="blid-link" style={{ fontSize: 12, fontWeight: 600 }}>{b.blid}</span>
+                </td>
+                <td>
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{b.desc}</span>
+                </td>
+                <td>
+                  {b.status === 'pass' && <span className="pill-complete" style={{ fontSize: 11 }}><CheckIcon size={10} />Pass</span>}
+                  {b.status === 'fail' && <span className="pill-fail" style={{ fontSize: 11 }}>Fail</span>}
+                  {b.status === 'untested' && <span style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 500 }}>Untested</span>}
+                </td>
+                <td>
+                  {b.issue && <span className={`fb-issue issue-${b.issue}`} style={{ fontSize: 10 }}>{b.issue}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Coverage Statistics */}
+      <div className="kpi-row">
+        <div className="kpi">
+          <div className="kpi-head">
+            <div className="kpi-label">BLID Coverage</div>
+            <span className="kpi-chip">{isGrouped ? activeFlow.group_name : 'Flow'}</span>
+          </div>
+          <span className="kpi-val">{coveragePct}<span className="kpi-val-unit">%</span></span>
+          <div className="kpi-bar"><div className="kpi-bar-fill" style={{ width: `${coveragePct}%` }} /></div>
+        </div>
+
+        <div className="kpi">
+          <div className="kpi-head">
+            <div className="kpi-label">Execution Progress</div>
+            <span className="kpi-ico"><CheckIcon size={18} /></span>
+          </div>
+          <span className="kpi-val">{execPct}<span className="kpi-val-unit">%</span></span>
+          <div className="kpi-bar"><div className="kpi-bar-fill" style={{ width: `${execPct}%` }} /></div>
+        </div>
       </div>
 
       {/* Per-module BLID breakdown */}
@@ -261,7 +347,6 @@ export function BLIDDashboard() {
                 <th>BLIDs</th>
                 <th>Passed</th>
                 <th>Coverage</th>
-                <th>Scenarios</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -295,8 +380,7 @@ export function BLIDDashboard() {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                          <span style={{ color: 'var(--ink-3)' }}>{flowBlids.length} BLIDs</span>
+                        <td style={{ padding: '8px 12px' }}>
                         </td>
                         <td style={{ padding: '8px 12px' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: flowPct === 100 ? 'var(--ok)' : flowPct > 50 ? 'var(--warn)' : 'var(--bad)' }}>
@@ -335,11 +419,6 @@ export function BLIDDashboard() {
                             </div>
                             <span className="cov-pct">{r.pct}%</span>
                           </div>
-                        </td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--ink-3)' }}>
-                          <span style={{ color: 'var(--ok)', fontWeight: 600 }}>{r.ms.pass}P</span>{' '}
-                          <span style={{ color: 'var(--bad)', fontWeight: 600 }}>{r.ms.fail}F</span>{' '}
-                          <span style={{ fontWeight: 500 }}>{r.ms.untested}U</span>
                         </td>
                         <td>{getStatusPill(r.pct, r.status)}</td>
                       </tr>
