@@ -100,6 +100,8 @@ export function flowStats(flow: Flow): FlowStats {
   const all    = flow.modules.flatMap(m => m.scenarios);
   const blids  = [...new Set(all.map(s => s.blid).filter(Boolean))];
   const passedBlids = blids.filter(b => all.filter(s => s.blid === b).some(s => scenarioStatus(s) === 'pass'));
+  const failedBlids = blids.filter(b => all.filter(s => s.blid === b).some(s => scenarioStatus(s) === 'fail'));
+  const untestedBlids = blids.filter(b => all.filter(s => s.blid === b).every(s => scenarioStatus(s) === 'untested'));
   const tested = all.filter(s => scenarioStatus(s) !== 'untested').length;
   return {
     total:     all.length,
@@ -108,6 +110,8 @@ export function flowStats(flow: Flow): FlowStats {
     untested:  all.filter(s => scenarioStatus(s) === 'untested').length,
     blidTotal: blids.length,
     blidPass:  passedBlids.length,
+    blidFail:  failedBlids.length,
+    blidUntested: untestedBlids.length,
     blidPct:   blids.length ? Math.round(passedBlids.length / blids.length * 100) : 0,
     execPct:   all.length   ? Math.round(tested / all.length * 100) : 0,
   };

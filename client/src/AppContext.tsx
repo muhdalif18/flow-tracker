@@ -41,7 +41,7 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'SET_ACTIVE':
       clearSavedExpanded();
-      return { ...state, activeFlowId: action.id, activeTab: 'diagram', expanded: new Set() };
+      return { ...state, activeFlowId: action.id, expanded: new Set() };
     case 'SET_TAB': {
       const shouldCloseExpanded =
         action.tab !== state.activeTab &&

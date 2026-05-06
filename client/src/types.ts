@@ -59,6 +59,8 @@ export interface FlowStats {
   untested: number;
   blidTotal: number;
   blidPass: number;
+  blidFail: number;
+  blidUntested: number;
   blidPct: number;
   execPct: number;
 }
