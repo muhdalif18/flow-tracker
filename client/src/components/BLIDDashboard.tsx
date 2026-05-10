@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../AppContext';
 import { useAuth } from '../AuthContext';
 import { flowStats, modStats, modStatus, scenarioStatus, scenarioIssueType } from '../utils';
@@ -75,6 +75,7 @@ export function BLIDDashboard() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
   const [collapsedFlows, setCollapsedFlows] = useState<Set<string>>(new Set());
+  const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
 
   if (!activeFlow) return null;
 
@@ -89,6 +90,52 @@ export function BLIDDashboard() {
     ? state.flows.filter(f => f.group_name === activeFlow.group_name)
     : [activeFlow];
   const isGrouped = activeFlow.group_name && groupFlows.length > 1;
+
+  // ── Module filter options (deduped by label across flows) ─────────────────
+  const moduleOptions = (() => {
+    const seen = new Map<string, { label: string; name: string }>();
+    for (const flow of groupFlows) {
+      for (const mod of flow.modules) {
+        if (!seen.has(mod.label)) {
+          seen.set(mod.label, { label: mod.label, name: mod.name });
+        }
+      }
+    }
+    return [...seen.values()].sort((a, b) => {
+      const na = parseInt(a.label.replace(/\D/g, ''), 10);
+      const nb = parseInt(b.label.replace(/\D/g, ''), 10);
+      return (isNaN(na) ? 0 : na) - (isNaN(nb) ? 0 : nb);
+    });
+  })();
+
+  // Stable key from sorted labels — changes only when set of module labels changes
+  const optionsKey = moduleOptions.map(m => m.label).join('|');
+
+  // Auto-select all modules when the option set changes (e.g. flow switch)
+  useEffect(() => {
+    setSelectedLabels(new Set(optionsKey ? optionsKey.split('|') : []));
+  }, [optionsKey]);
+
+  const allModulesSelected = selectedLabels.size === moduleOptions.length;
+  const hasModuleFilter = !allModulesSelected;
+
+  const toggleModule = (label: string) => {
+    setSelectedLabels(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+  const selectOnlyModule = (label: string) => {
+    setSelectedLabels(new Set([label]));
+  };
+  const selectAllModules = () => {
+    setSelectedLabels(new Set(moduleOptions.map(m => m.label)));
+  };
+  const clearAllModules = () => {
+    setSelectedLabels(new Set());
+  };
 
   // ── Group-level BLID coverage ─────────────────────────────────────────────
   const groupAll     = groupFlows.flatMap(f => f.modules.flatMap(m => m.scenarios));
@@ -121,15 +168,17 @@ export function BLIDDashboard() {
     });
   };
 
-  // ── All BLIDs summary (group-wide) ────────────────────────────────────────
+  // ── All BLIDs summary (filtered by selected modules) ──────────────────────
   const blidSummaryMap = new Map<string, { blid: string; desc: string; status: 'pass' | 'fail' | 'untested'; issue: string | null }>();
   for (const f of groupFlows) {
-    const fAll = f.modules.flatMap(m => m.scenarios);
-    for (const sc of fAll) {
-      if (sc.blid && !blidSummaryMap.has(sc.blid)) {
-        const status = scenarioStatus(sc);
-        const issue = scenarioIssueType(sc);
-        blidSummaryMap.set(sc.blid, { blid: sc.blid, desc: sc.description, status, issue });
+    for (const m of f.modules) {
+      if (!selectedLabels.has(m.label)) continue;
+      for (const sc of m.scenarios) {
+        if (sc.blid && !blidSummaryMap.has(sc.blid)) {
+          const status = scenarioStatus(sc);
+          const issue = scenarioIssueType(sc);
+          blidSummaryMap.set(sc.blid, { blid: sc.blid, desc: sc.description, status, issue });
+        }
       }
     }
   }
@@ -257,6 +306,11 @@ export function BLIDDashboard() {
         <div className="section-head">
           <div className="section-title-lg">
             {isGrouped ? `${activeFlow.group_name} - All BLIDs` : 'All BLIDs in Flow'}
+            {hasModuleFilter && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--blue-2)', marginLeft: 8, padding: '2px 8px', background: 'rgba(29,78,216,.08)', borderRadius: 999 }}>
+                Filtered
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 12, fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600 }}>
             <span style={{ color: 'var(--ink)' }}>{allBLIDsSummary.length} Total</span>
@@ -264,6 +318,65 @@ export function BLIDDashboard() {
             <span style={{ color: 'var(--bad)' }}>{blidFailCount} Fail</span>
             <span style={{ color: 'var(--ink-3)' }}>{blidUntestedCount} Untested</span>
           </div>
+        </div>
+
+        {/* Module filter */}
+        <div style={{
+          marginBottom: 12,
+          padding: '10px 12px',
+          border: '1px solid var(--line)',
+          borderRadius: 8,
+          background: 'var(--hover)',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--ink-3)', marginRight: 4 }}>
+            Filter
+          </span>
+          <button
+            type="button"
+            onClick={() => allModulesSelected ? clearAllModules() : selectAllModules()}
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '4px 10px',
+              borderRadius: 999,
+              cursor: 'pointer',
+              border: '1px solid ' + (allModulesSelected ? 'var(--blue-2)' : 'var(--line)'),
+              background: allModulesSelected ? 'var(--blue-2)' : 'var(--panel)',
+              color: allModulesSelected ? '#fff' : 'var(--ink-2)',
+            }}
+          >
+            All
+          </button>
+          {moduleOptions.map(m => {
+            const checked = selectedLabels.has(m.label) && !allModulesSelected;
+            return (
+              <button
+                key={m.label}
+                type="button"
+                onClick={(e) => {
+                  if (e.shiftKey || e.ctrlKey || e.metaKey) toggleModule(m.label);
+                  else if (allModulesSelected) selectOnlyModule(m.label);
+                  else toggleModule(m.label);
+                }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  border: '1px solid ' + (checked ? 'var(--blue-2)' : 'var(--line)'),
+                  background: checked ? 'var(--blue-2)' : 'var(--panel)',
+                  color: checked ? '#fff' : 'var(--ink-2)',
+                }}
+              >
+                {m.label}
+              </button>
+            );
+          })}
         </div>
 
         <table className="tbl">
@@ -276,6 +389,13 @@ export function BLIDDashboard() {
             </tr>
           </thead>
           <tbody>
+            {allBLIDsSummary.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ textAlign: 'center', padding: 16, color: 'var(--ink-3)', fontSize: 12 }}>
+                  No BLIDs match the selected modules.
+                </td>
+              </tr>
+            )}
             {allBLIDsSummary.map(b => (
               <tr key={b.blid} style={{
                 background: b.status === 'fail' ? 'rgba(220,38,38,.02)' : b.status === 'pass' ? 'rgba(22,163,74,.02)' : undefined
